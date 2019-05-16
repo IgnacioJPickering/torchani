@@ -138,53 +138,24 @@ class BatchedANIDataset(Dataset):
         self.properties = properties
         self.device = device
 
-        # get name of files storing data
-        files = []
-        if isdir(path):
-            for f in os.listdir(path):
-                f = join(path, f)
-                if isfile(f) and (f.endswith('.h5') or f.endswith('.hdf5')):
-                    files.append(f)
-        elif isfile(path):
-            files = [path]
-        else:
-            raise ValueError('Bad path')
-
+        # get list of files storing data
+        files = self.get_file_list(path)
         # load full dataset
-        species_coordinates = []
-        properties = {k: [] for k in self.properties}
-        for f in files:
-            for m in anidataloader(f):
-                s = species_tensor_converter(m['species'])
-                c = torch.from_numpy(m['coordinates']).to(torch.double)
-                species_coordinates.append((s, c))
-                for i in properties:
-                    p = torch.from_numpy(m[i]).to(torch.double)
-                    properties[i].append(p)
-        species, coordinates = utils.pad_coordinates(species_coordinates)
-        for i in properties:
-            properties[i] = torch.cat(properties[i])
-
-        # shuffle if required
+        #this loads 3 tensors already padded
+        #a species tensor, a coordinates tensor and a properties tensor
+        #with ALL the species, coordinates and properties inside, 
+        #shuffles if required
+        species, coordinates, properties = self.load_species_coords_properties(
+                files,self.properties,species_tensor_converter,shuffle)
         conformations = coordinates.shape[0]
-        if shuffle:
-            indices = torch.randperm(conformations)
-            species = species.index_select(0, indices)
-            coordinates = coordinates.index_select(0, indices)
-            for i in properties:
-                properties[i] = properties[i].index_select(0, indices)
-
         # do transformations on data
         for t in transform:
             species, coordinates, properties = t(species, coordinates,
                                                  properties)
-
         # convert to desired dtype
-        species = species
         coordinates = coordinates.to(dtype)
         for k in properties:
             properties[k] = properties[k].to(dtype)
-
         # split into minibatches, and strip redundant padding
         natoms = (species >= 0).to(torch.long).sum(1)
         batches = []
@@ -199,15 +170,49 @@ class BatchedANIDataset(Dataset):
             coordinates_batch = coordinates[start:end, ...] \
                 .index_select(0, indices)
             properties_batch = {
-                k: properties[k][start:end, ...].index_select(0, indices)
-                .to(self.device) for k in properties
-            }
+                k: properties[k][start:end, ...].index_select(0, indices) \
+                .to(self.device) for k in properties}
             # further split batch into chunks
             species_coordinates = split_batch(natoms_batch, species_batch,
                                               coordinates_batch)
             batch = species_coordinates, properties_batch
             batches.append(batch)
         self.batches = batches
+    def get_file_list(self,path):
+        files = []
+        if isdir(path):
+            for f in os.listdir(path):
+                f = join(path, f)
+                if isfile(f) and (f.endswith('.h5') or f.endswith('.hdf5')):
+                    files.append(f)
+            return files
+        elif isfile(path):
+            return [path]
+        else:
+            raise ValueError('Bad path')
+
+    def load_species_coords_properties(self,files,props,species_tensor_converter,shuffle):
+        species_coordinates = []
+        properties = {k: [] for k in props}
+        for f in files:
+            for m in anidataloader(f):
+                s = species_tensor_converter(m['species'])
+                c = torch.from_numpy(m['coordinates']).to(torch.double)
+                species_coordinates.append((s, c))
+                for i in properties:
+                    p = torch.from_numpy(m[i]).to(torch.double)
+                    properties[i].append(p)
+        species, coordinates = utils.pad_coordinates(species_coordinates)
+        for i in properties:
+            properties[i] = torch.cat(properties[i])
+        conformations = coordinates.shape[0]
+        if shuffle:
+            indices = torch.randperm(conformations)
+            species = species.index_select(0, indices)
+            coordinates = coordinates.index_select(0, indices)
+            for i in properties:
+                properties[i] = properties[i].index_select(0, indices)
+        return species, coordinates, properties
 
     def __getitem__(self, idx):
         species_coordinates, properties = self.batches[idx]
@@ -217,6 +222,7 @@ class BatchedANIDataset(Dataset):
 
     def __len__(self):
         return len(self.batches)
+
 
 
 class AEVCacheLoader(Dataset):

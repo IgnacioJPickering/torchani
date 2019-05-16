@@ -23,6 +23,7 @@ class Container(torch.nn.ModuleDict):
         super(Container, self).__init__(modules)
 
     def forward(self, species_x):
+        print(len(species_x))
         """Takes sequence of species, coordinates pair as input, and returns
         computed properties as a dictionary. Same property from different
         chunks will be concatenated to form a single tensor for a batch.
