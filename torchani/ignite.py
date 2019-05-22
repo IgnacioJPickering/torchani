@@ -62,6 +62,8 @@ class PerAtomDictLoss(DictLoss):
 
     def forward(self, input_, other):
         loss = self.loss(input_[self.key], other[self.key])
+        #If loss elements are vectors sum the components
+        if (len(loss.size())==2): loss = torch.sum(loss,axis=1)
         num_atoms = (input_['species'] >= 0).sum(dim=1)
         loss /= num_atoms.to(loss.dtype).to(loss.device)
         n = loss.numel()

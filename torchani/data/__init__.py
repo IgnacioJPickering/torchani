@@ -149,7 +149,6 @@ class BatchedANIDataset(Dataset):
             files = [path]
         else:
             raise ValueError('Bad path')
-
         # load full dataset
         species_coordinates = []
         properties = {k: [] for k in self.properties}
@@ -159,7 +158,10 @@ class BatchedANIDataset(Dataset):
                 c = torch.from_numpy(m['coordinates']).to(torch.double)
                 species_coordinates.append((s, c))
                 for i in properties:
-                    p = torch.from_numpy(m[i]).to(torch.double)
+                    if i == 'tot_hirdipole':
+                        p = torch.from_numpy(m['hirdipole'][:,-1,:]).to(torch.double)
+                    else:
+                        p = torch.from_numpy(m[i]).to(torch.double)
                     properties[i].append(p)
         species, coordinates = utils.pad_coordinates(species_coordinates)
         for i in properties:

@@ -22,8 +22,8 @@ import timeit
 import os
 import ignite.contrib.handlers
 import torch.utils.tensorboard
-
-
+import matplotlib.pyplot as plt
+import numpy as np
 ###############################################################################
 # Now let's setup training hyperparameters and dataset.
 
@@ -39,7 +39,7 @@ validation_path = os.path.join(path, '/home/ignacio/Git-Repos/torchani/dataset/C
 model_checkpoint = 'model.pt'
 
 # max epochs to run the training
-max_epochs = 20
+max_epochs = 100
 
 # Compute training RMSE every this steps. Since the training set is usually
 # huge and the loss funcition does not directly gives us RMSE, we need to
@@ -77,7 +77,7 @@ def atomic():
         torch.nn.CELU(0.1),
         torch.nn.Linear(128, 64),
         torch.nn.CELU(0.1),
-        torch.nn.Linear(64, 1)
+        torch.nn.Linear(64, 3)
     )
     return model
 
@@ -102,26 +102,29 @@ writer = torch.utils.tensorboard.SummaryWriter(log_dir=log)
 
 ###############################################################################
 # Now load training and validation datasets into memory.
+#training = torchani.data.BatchedANIDataset(
+#    training_path, consts.species_to_tensor, batch_size,True,properties=['tot_hirdipole'], device=device,
+#    transform=[energy_shifter.subtract_from_dataset])
+#validation = torchani.data.BatchedANIDataset(
+#    validation_path, consts.species_to_tensor, batch_size,True,properties=['tot_hirdipole'], device=device,
+#    transform=[energy_shifter.subtract_from_dataset])
 training = torchani.data.BatchedANIDataset(
-    training_path, consts.species_to_tensor, batch_size, device=device,
-    transform=[energy_shifter.subtract_from_dataset])
-
+    training_path, consts.species_to_tensor, batch_size,True,properties=['tot_hirdipole'], device=device)
 validation = torchani.data.BatchedANIDataset(
-    validation_path, consts.species_to_tensor, batch_size, device=device,
-    transform=[energy_shifter.subtract_from_dataset])
+    validation_path, consts.species_to_tensor, batch_size,True,properties=['tot_hirdipole'], device=device)
 
 ###############################################################################
 # We have tools to deal with the chunking (see :ref:`training-example`). These
 # tools can be used as follows:
-container = torchani.ignite.Container({'energies': model})
+container = torchani.ignite.Container({'tot_hirdipole': model})
 optimizer = torch.optim.Adam(model.parameters())
 trainer = ignite.engine.create_supervised_trainer(
-    container, optimizer, torchani.ignite.MSELoss('energies'))
+    container, optimizer, torchani.ignite.MSELoss('tot_hirdipole'))
 evaluator = ignite.engine.create_supervised_evaluator(
     container,
-    metrics={'RMSE': torchani.ignite.RMSEMetric('energies'),
-        'MAE': torchani.ignite.MAEMetric('energies'),
-        'MaxAE': torchani.ignite.MaxAEMetric('energies')})
+    metrics={'RMSE': torchani.ignite.RMSEMetric('tot_hirdipole'),
+             'MAE': torchani.ignite.MAEMetric('tot_hirdipole')})
+             #'MaxAE': torchani.ignite.MaxAEMetric('tot_hirdipole')})
 
 
 ###############################################################################
@@ -143,20 +146,24 @@ def validation_and_checkpoint(trainer):
         evaluator.run(dataset)
         metrics = evaluator.state.metrics
         epoch = trainer.state.epoch
-        rmse = hartree2kcal(metrics['RMSE'])
-        mae  = hartree2kcal(metrics['MAE'])
-        maxae  = hartree2kcal(metrics['MaxAE'])
+        rmse   = metrics['RMSE']
+        mae    = metrics['MAE']
+        #maxae  = metrics['MaxAE']
+        #rmse = hartree2kcal(metrics['RMSE'])
+        #mae  = hartree2kcal(metrics['MAE'])
+        #maxae  = hartree2kcal(metrics['MaxAE'])
         writer.add_scalar(f'{dataname}_rmse_vs_epoch', rmse, epoch)
         writer.add_scalar(f'{dataname}_mae_vs_epoch', mae, epoch)
-        writer.add_scalar(f'{dataname}_maxae_vs_epoch', maxae, epoch)
-        print(f'dataset: {dataname}; epoch: {epoch}; RMSE: {rmse}; MAE: {mae}; MaxAE: {maxae}')
+        #writer.add_scalar(f'{dataname}_maxae_vs_epoch', maxae, epoch)
+        print(f'dataset: {dataname}; epoch: {epoch}; RMSE: {rmse}; MAE: {mae};')
 
     # compute validation RMSE
-    evaluate(validation, 'validation_metrics_vs_epoch')
+    #evaluate(validation, 'validation_metrics_vs_epoch')
 
     # compute training RMSE
     if trainer.state.epoch % training_rmse_every == 1:
-        evaluate(training, 'training_metrics_vs_epoch')
+        pass
+    #    evaluate(training, 'training_metrics_vs_epoch')
 
     # checkpoint model
     torch.save(nn.state_dict(), model_checkpoint)
@@ -166,9 +173,11 @@ def validation_and_checkpoint(trainer):
 # Also some to log elapsed time:
 start = timeit.default_timer()
 
-
-@trainer.on(ignite.engine.Events.EPOCH_STARTED)
+loss_history = []
+@trainer.on(ignite.engine.Events.EPOCH_COMPLETED)
 def log_time(trainer):
+    print("loss:",trainer.state.output)
+    loss_history.append(float(trainer.state.output))
     elapsed = round(timeit.default_timer() - start, 2)
     writer.add_scalar('time_vs_epoch', elapsed, trainer.state.epoch)
 
@@ -184,3 +193,5 @@ def log_loss(trainer):
 ###############################################################################
 # And finally, we are ready to run:
 trainer.run(training, max_epochs)
+plt.plot(np.array(loss_history))
+plt.show()

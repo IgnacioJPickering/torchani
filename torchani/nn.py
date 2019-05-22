@@ -39,14 +39,27 @@ class ANIModel(torch.nn.ModuleList):
         present_species = utils.present_species(species)
         aev = aev.flatten(0, 1)
 
-        output = torch.full_like(species_, self.padding_fill,
-                                 dtype=aev.dtype)
         for i in present_species:
-            mask = (species_ == i)
-            input_ = aev.index_select(0, mask.nonzero().squeeze())
-            output.masked_scatter_(mask, self[i](input_).squeeze())
-        output = output.view_as(species)
-        return species, self.reducer(output, dim=1)
+            mask_species = (species_ == i)
+            input_ = aev.index_select(0, mask_species.nonzero().squeeze())
+            atomic_output = self[i](input_).squeeze()
+            if len(atomic_output.size()) == 2:
+                prop_dim = atomic_output.size()[1]
+            else:
+                prop_dim = 1
+            #padding fill is 0
+            molecular_output = torch.full_like(
+                species_, self.padding_fill,dtype=aev.dtype)
+            molecular_output = torch.repeat_interleave(
+                molecular_output.unsqueeze(1),prop_dim,axis=1)
+
+            mask_property = torch.repeat_interleave(
+                    mask_species.unsqueeze(1),prop_dim,axis=1)
+
+            molecular_output.masked_scatter_(mask_property, atomic_output)
+
+        molecular_output = molecular_output.view(species.size()[0],species.size()[1],-1)
+        return species, self.reducer(molecular_output, dim=1).squeeze()
 
 
 class Ensemble(torch.nn.ModuleList):
