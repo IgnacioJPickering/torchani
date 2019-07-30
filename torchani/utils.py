@@ -14,8 +14,8 @@ def pad(species):
 
     Arguments:
         species (:class:`collections.abc.Sequence`): sequence of species.
-            Species must be of shape ``(N, A)``, where ``N`` is the number of
-            3D structures, ``A`` is the number of atoms.
+            Species must be of shape ``(C, A)``, where ``C`` is the number of
+            molecules (conformations), and ``A`` is the number of atoms.
 
     Returns:
         :class:`torch.Tensor`: species batched together.
@@ -133,10 +133,11 @@ def map2central(cell, coordinates, pbc):
 
 
 class EnergyShifter(torch.nn.Module):
-    """Helper class for adding and subtracting self atomic energies
+    """Module for adding and subtracting self atomic energies
 
     This is a subclass of :class:`torch.nn.Module`, so it can be used directly
-    in a pipeline as ``[input->AEVComputer->ANIModel->EnergyShifter->output]``.
+    in a pipeline ``input -> AEVComputer -> ANIModel -> EnergyShifter ->
+    output``.
 
     Arguments:
         self_energies (:class:`collections.abc.Sequence`): Sequence of floating
@@ -179,7 +180,7 @@ class EnergyShifter(torch.nn.Module):
 
         Returns:
             :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
-            for molecular self energies.
+                for molecular self energies.
         """
         self_energies = self.self_energies[species]
         self_energies[species == -1] = 0
@@ -201,7 +202,22 @@ class EnergyShifter(torch.nn.Module):
         return atomic_properties, properties
 
     def forward(self, species_energies):
-        """(species, molecular energies)->(species, molecular energies + sae)
+        """Adds self energies to input energies
+
+        The forward method of this module is meant to be used in a pipeline
+        ``input -> AEVComputer -> ANIModel -> EnergyShifter -> output``. It
+        is simply a componentwise addition that adds the shifts to the 
+        energies of all the conformations. Shifts to the molecular energies
+        are calculated from the SAE of the species.
+
+        Arguments:
+            species_energies (:class:`tuple`): Tuple of tensors, species, shape ``(C, A)``
+            and energies, shape ``(C,)``.
+
+        Returns:
+            species_energies (:class:`tuple`): Tuple of tensors, species, shape
+                ``(C, A)`` (unchanged from input) and shifted energies, shape
+                ``(C,)``.
         """
         species, energies = species_energies
         sae = self.sae(species).to(energies.dtype).to(energies.device)

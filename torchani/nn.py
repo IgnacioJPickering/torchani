@@ -11,11 +11,12 @@ class ANIModel(torch.nn.ModuleList):
     different atoms to obtain molecular properties.
 
     Arguments:
-        modules (:class:`collections.abc.Sequence`): Modules for each atom
-            types. Atom types are distinguished by their order in
-            :attr:`modules`, which means, for example ``modules[i]`` must be
-            the module for atom type ``i``. Different atom types can share a
-            module by putting the same reference in :attr:`modules`.
+        modules (:class:`collections.abc.Sequence`): Sequence of
+            :class:``torch.nn.Module`` modules for each atom type. Atom types
+            are distinguished by their order in :attr:`modules`, which means,
+            for example ``modules[i]`` must be the module for atom type ``i``.
+            Different atom types can share a module by putting the same
+            reference in :attr:`modules`.
         reducer (:class:`collections.abc.Callable`): The callable that reduce
             atomic outputs into molecular outputs. It must have signature
             ``(tensor, dim)->tensor``.
@@ -34,6 +35,31 @@ class ANIModel(torch.nn.ModuleList):
         self.padding_fill = padding_fill
 
     def forward(self, species_aev):
+        """Forward method for the module
+
+        This method is automatically called when an instance of the classs is
+        called as a function. for example:
+
+        .. code-block:: python
+
+            animodel = ANIModel([c_network, h_network, o_network, n_network])
+            # call animodel.forward(species_input)
+            species, output = animodel(species_aev)
+
+        This usage is common for all torch forward methods.
+            
+        Arguments:
+            species_aev (:class:`tuple`): tuple of ``torch.Tensor`` objects, 
+                species, of shape ``(C, A)`` and aev, of shape ``(C, A, ?)``,
+                where ``?`` is the length of the AEV (in principle it could be
+                anything; it is a fixed number for a given Bleher-Parrinello
+                style NN potential).
+        Returns:
+            tuple: tuple which holds the species, of shape ``(C, A)``,
+                unchanged from the input, and output energies for each
+                conformation that are the reduction of the output for all atoms
+                (by default the sum), of shape ``(C,)``.
+        """
         species, aev = species_aev
         species_ = species.flatten()
         present_species = utils.present_species(species)
@@ -50,15 +76,57 @@ class ANIModel(torch.nn.ModuleList):
 
 
 class Ensemble(torch.nn.ModuleList):
-    """Compute the average output of an ensemble of modules."""
+    """Compute the average output of an ensemble of modules.
+
+    This container module holds a number of ANIModel modules and 
+    reduces their combined output by averaging their results. 
+    Methods `append`, `extend` and `insert` can be called to modify 
+    the modules in the list after initialization, they work exactly the 
+    same as the usual python :class:`list` methods.
+    
+    Arguments:
+        modules (iterable, optional): An iterable of ``torch.nn.Module``
+            modules held inside the ensemble container. By default it 
+            is initialized as empty.
+    """
 
     def forward(self, species_input):
-        outputs = [x(species_input)[1] for x in self]
+        """Forward method for the module
+
+        Calls the forward method of each module in the class for the input
+        argument given and outputs the average. 'species' goes through
+        unchanged.
+
+        This method is automatically called when an instance of the class is
+        called as a function. For example:
+
+        .. code-block:: python
+
+            ensemble = Ensemble([animodel_1, animodel_2, animodel_3])
+            # call ensemble.forward(species_input)
+            species, output = ensemble(species_input)
+
+        This usage is common for all torch forward methods.
+
+        Arguments:
+            species_input (:class:`tuple`): tuple of ``torch.Tensor`` objects, 
+                species, of shape ``(C, A)`` and input, of shape ``(C, A, ?)``.
+                In general, input will be a minibatch of species_aev, but this
+                is not necessary in principle 
+        Returns:
+            tuple: tuple which holds the species and one output that is the
+                average of all ANIModel instance outputs (after their
+                respective reductions). Species is of shape ``(C, A)``, 
+                unchanged from the input, and the average output is
+                of shape ``(C,)`` (one energy per conformation).
+
+        """
+        outputs = [module(species_input)[1] for module in self]
         species, _ = species_input
         return species, sum(outputs) / len(outputs)
 
 
 class Gaussian(torch.nn.Module):
-    """Gaussian activation"""
+    """Gaussian activation function"""
     def forward(self, x):
         return torch.exp(- x * x)

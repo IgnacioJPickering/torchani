@@ -93,17 +93,18 @@ class BuiltinModels(torch.nn.Module):
 class BuiltinNet(torch.nn.Module):
     """Private template for the builtin ANI ensemble models.
 
-    All ANI ensemble models form the ANI models zoo should inherit from this class.
-    This class is a torch module that sequentially calculates
-    AEVs, then energies from a torchani.Ensemble and then uses EnergyShifter
-    to shift those energies. It is essentially a sequential
+    All ANI ensemble models form the ANI models zoo should inherit from this
+    class.  This class is a torch module that sequentially calculates AEVs,
+    then energies from a :class:`torchani.Ensemble` and then uses
+    EnergyShifter to shift those energies. It is essentially a sequential
     'AEVComputer -> Ensemble -> EnergyShifter'.
 
     .. note::
-        This class is for internal use only, avoid using it, use ANI1x, ANI1ccx,
-        etc instead. Don't confuse this class with torchani.Ensemble, which
-        is only a container for many ANIModel instances and shouldn't be used
-        directly for calculations.
+        This class is for internal use only, avoid using it, use ANI1x,
+        ANI1ccx, etc instead. Don't confuse this class with
+        :class:`torchani.Ensemble`, which is only a container for many
+        :class:`torchani.ANIModel` instances and shouldn't be used directly for
+        calculations.
 
     Attributes:
         const_file (:class:`str`): Path to the file with the builtin constants.
@@ -135,15 +136,21 @@ class BuiltinNet(torch.nn.Module):
             self.species, self.ensemble_prefix, self.ensemble_size)
 
     def forward(self, species_coordinates):
-        """Calculates predicted properties for minibatch of configurations
+        """Calculates predicted properties for minibatch of conformations
 
-        Args:
-            species_coordinates: minibatch of configurations
+        Arguments:
+            species_coordinates (:class:`tuple`): Minibatch of conformations, 
+                tuple where species and coordinates are :class:`torch.Tensor`
+                of shape ``(C, A)`` and ``(C, A, 3)`` respectively.
 
         Returns:
-            species_energies: energies for the given configurations
+            tuple: tuple of species, shifted predicted energies for the given
+                configurations. Species is unchanged from the input and has
+                shape ``(C, A)`` and shifted_energies has shape ``(C,)`` (one
+                energy per conformation).
         """
         species_aevs = self.aev_computer(species_coordinates)
+        # The energies are not shifted in species_energies
         species_energies = self.neural_networks(species_aevs)
         return self.energy_shifter(species_energies)
 
@@ -159,8 +166,8 @@ class BuiltinNet(torch.nn.Module):
             index (:class:`int`): Index of the model
 
         Returns:
-            ret: (:class:`torch.nn.Sequential`): Sequential model ready for
-                calculations
+            ret (:class:`torch.nn.Sequential`): Sequential model ready for
+                calculations.
         """
         ret = torch.nn.Sequential(
             self.aev_computer,
@@ -169,7 +176,7 @@ class BuiltinNet(torch.nn.Module):
         )
 
         def ase(**kwargs):
-            """Attach an ase calculator """
+            """Attach an ase calculator"""
             from . import ase
             return ase.Calculator(self.species,
                                   self.aev_computer,

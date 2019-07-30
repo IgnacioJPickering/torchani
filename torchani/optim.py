@@ -8,7 +8,9 @@ from torch.optim.optimizer import Optimizer
 class AdamW(Optimizer):
     r"""Implements AdamW algorithm.
 
-    It has been proposed in `Decoupled Weight Decay Regularization`_.
+    An implementation of the AdamW optimizer as proposed in `Decoupled Weight
+    Decay Regularization`_. Node that this is different from the usual 
+    'Adam with L2 regularization'.
 
     Arguments:
         params (iterable): iterable of parameters to optimize or dicts defining
