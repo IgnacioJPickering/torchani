@@ -26,8 +26,8 @@ pygments_style = 'sphinx'
 html_theme = 'sphinx_rtd_theme'
 html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 htmlhelp_basename = 'TorchANIdoc'
-# Temporary fix for a RTD bug with html5
-html4_writer=True
+# Temporary fix for an RTD bug with HTML5
+html4_writer = True
 
 sphinx_gallery_conf = {
     'examples_dirs': '../examples',
@@ -58,4 +58,3 @@ texinfo_documents = [
      author, 'TorchANI', 'One line description of project.',
      'Miscellaneous'),
 ]
-
