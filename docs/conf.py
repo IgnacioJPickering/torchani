@@ -28,6 +28,8 @@ html_theme_path = [sphinx_rtd_theme.get_html_theme_path()]
 htmlhelp_basename = 'TorchANIdoc'
 # Temporary fix for an RTD bug with HTML5
 html4_writer = True
+# Imporve rendering of class attributes
+napoleon_use_ivar = True
 
 sphinx_gallery_conf = {
     'examples_dirs': '../examples',
