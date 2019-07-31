@@ -129,7 +129,7 @@ def load_sae(filename):
     Arguments:
         filename (:class:`str`): Path to the NeuroChem `*.sae` file.
     Returns:
-        energy_shifter (:class:`torchani.EnergyShifter`): EnergyShifter module that
+        :class:`torchani.EnergyShifter`: EnergyShifter module that
             adds shifts to molecular energies based on SAE energies.
     """
     self_energies = []
@@ -166,7 +166,7 @@ def load_atomic_network(filename):
     Arguments:
         filename (:class:`str`): path to the `*.nnf` file
     Returns:
-        atomic_module (:class:`torch.nn.Sequential`): Torch sequential module 
+        :class:`torch.nn.Sequential`: Torch sequential module 
             for a given atom. Many atomic modules are used to create one
             ANIModel module.
     """
@@ -306,9 +306,8 @@ def load_model(species, dir_):
             chemical symbols of each supported atom type in correct order.
         dir_ (:class:`str`): String for directory storing network configurations.
     Returns:
-        ani_model (:class:`torchani.ANIModel`): Instance of an ANIModel module,
-            using the architecture found in the NeuroChem-style format `*.nnf`
-            file.
+        :class:`torchani.ANIModel`: Instance of an ANIModel module, using the
+            architecture found in the NeuroChem-style format `*.nnf` file.
     """
     models = []
     for i in species:
@@ -330,8 +329,8 @@ def load_model_ensemble(species, prefix, count):
             are stored.
         count (:class:`int`): Number of models in the ensemble.
     Returns:
-        ensemble (:class:`torchani.Ensemble`): Ensemble of
-            :class:`torchani.ANIModel` modules.
+        :class:`torchani.Ensemble`: Ensemble of :class:`torchani.ANIModel`
+            modules.
     """
     models = []
     for i in range(count):
