@@ -53,7 +53,7 @@ class Constants(collections.abc.Mapping):
     Attributes:
         filename (:class:`str`): Path to file that holds the AEV constants.
 
-        species (:class:`list`[:class:`str`]): List chemical symbols of the
+        species (:class:`list` of :class:`str`): List chemical symbols of the
             elements the AEV can describe.
         num_species (:class:`int`): Number of species the AEV can describe
             (length of :attr:`species`).
@@ -63,17 +63,17 @@ class Constants(collections.abc.Mapping):
             `dtype=long`, holding the associated atomic numbers.
 
         Rcr (:class:`float`): Value of the radial cutoff radius.
-        ShfR (:class:`list`[:class:`float`]): List of radial gaussian centers.
-        EtaR (:class:`list`[:class:`float`]): List of radial gaussian widths
+        ShfR (:class:`list` of :class:`float`): List of radial gaussian centers.
+        EtaR (:class:`list` of :class:`float`): List of radial gaussian widths
             (one element only for current builtin models).
 
         Rca (:class:`float`): Value of the angular cutoff radius.
-        ShfA (:class:`list`[:class:`float`]): List of angular gaussian centers.
-        ShfZ (:class:`list`[:class:`float`]): List of angular cosine
+        ShfA (:class:`list` of :class:`float`): List of angular gaussian centers.
+        ShfZ (:class:`list` of :class:`float`): List of angular cosine
             displacements.
-        EtaA (:class:`list`[:class:`float`]): List of angular gaussian widths
+        EtaA (:class:`list` of :class:`float`): List of angular gaussian widths
             (one element only for current builtin models).
-        Zeta (:class:`list`[:class:`float`]): List of angular Zeta exponents
+        Zeta (:class:`list` of :class:`float`): List of angular Zeta exponents
             (one element only for current builtin models).
     """
 

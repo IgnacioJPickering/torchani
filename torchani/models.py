@@ -97,12 +97,12 @@ class BuiltinNet(torch.nn.Module):
     def forward(self, species_coordinates):
         """Calculates predicted properties for minibatch of conformations
         Arguments:
-            species_coordinates (:class:`tuple`[:class:`torch.Tensor`]):
+            species_coordinates (:class:`tuple` of :class:`torch.Tensor`):
                 Minibatch of conformations, tuple of tensors of shape ``(C,
                 A)`` and ``(C, A, 3)`` respectively.
 
         Returns:
-            :class:`tuple`[:class:`torch.Tensor`]: tuple (species,
+            :class:`tuple` of :class:`torch.Tensor`: tuple (species,
                 shifted-energies) for the given configurations. Species is
                 unchanged from the input and has shape ``(C, A)`` and
                 shifted_energies has shape ``(C,)``.

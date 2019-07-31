@@ -211,11 +211,11 @@ class EnergyShifter(torch.nn.Module):
         are calculated from the SAE of the species.
 
         Arguments:
-            species_energies (:class:`tuple`[:class:`torch.Tenosr`]): Tuple of,
+            species_energies (:class:`tuple` of :class:`torch.Tenosr`): Tuple of,
                 species, shape ``(C, A)`` and energies, shape ``(C,)``.
 
         Returns:
-            :class:`tuple`[:class:`torch.Tensor`]: Tuple of species, shape
+            :class:`tuple` of :class:`torch.Tensor`: Tuple of species, shape
                 ``(C, A)`` (unchanged from input) and shifted energies, shape
                 ``(C,)``.
         """
@@ -235,7 +235,7 @@ class ChemicalSymbolsToInts:
     function it converts a sequence of strings to a 1D long tensor:
 
     Arguments:
-        species (:class:`str` or :class:`list`[:class:`str`]): Iterable of element symbols.
+        species (:class:`str` or :class:`collections.abc.Sequence` of :class:`str`]): Iterable of element symbols.
 
     Returns: 
         :class:`torch.Tensor`: Tensor of ``dtype=torch.long`` that

@@ -48,12 +48,12 @@ class ANIModel(torch.nn.ModuleList):
         This usage is common for all torch forward methods.
             
         Arguments:
-            species_aev (:class:`tuple`[:class:`torch.Tensor`]): species,
+            species_aev (:class:`tuple` of :class:`torch.Tensor`): species,
                 shape ``(C, A)`` and aev, shape ``(C, A, ?)``, where ``?`` is
                 the length of the AEV (in principle it could be anything; it is
                 fixed for a given NNP)
-        Returns:
-            :class:`tuple`[:class:`torch.Tensor`]: tuple of species, shape ``(C,
+    Returns:
+            :class:`tuple` of :class:`torch.Tensor`: tuple of species, shape ``(C,
                 A)``, unchanged from the input, and energies, shape ``(C,)`` for each
                 conformation that are the reduction of the output for all atoms (by
                 default the sum).
@@ -107,12 +107,12 @@ class Ensemble(torch.nn.ModuleList):
         This usage is common for all torch forward methods.
 
         Arguments:
-            species_input (:class:`tuple`[:class:`torch.Tensor`]): tuple of
+            species_input (:class:`tuple` of :class:`torch.Tensor`): tuple of
                 species, shape ``(C, A)`` and input, shape ``(C, A, ?)``.  In
                 general, input will be a minibatch of species_aev, but this is
                 not necessary.
         Returns:
-            :class:`tuple`[:class:`torch.Tensor`]: tuple which holds the
+            :class:`tuple` of :class:`torch.Tensor`: tuple which holds the
                 species, shape ``(C, A)`` unchanged from input, and
                 average-energies, shape ``(C,)``. The outputs average all
                 ANIModel instance outputs (after their respective reductions).

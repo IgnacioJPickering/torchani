@@ -423,7 +423,7 @@ class AEVComputer(torch.nn.Module):
         This usage is common for all torch forward methods.
 
         Arguments:
-            input_ (:class:`tuple`[:class:`torch.Tensor`]): Can be one of the following two cases:
+            input_ (:class:`tuple` of :class:`torch.Tensor`): Can be one of the following two cases:
 
                 If you don't care about periodic boundary conditions at all,
                 then input can be a tuple species, shape
@@ -448,7 +448,7 @@ class AEVComputer(torch.nn.Module):
                     pbc = torch.tensor([True, True, True])
 
         Returns:
-            :class:`tuple`[:class:`torch.Tensor`]: Species, unchanged from input, and AEVs, of shape ``(C, A, self.aev_length())``. 
+            :class:`tuple` of :class:`torch.Tensor`: Species, unchanged from input, and AEVs, of shape ``(C, A, self.aev_length())``. 
         """
         if len(input_) == 2:
             species, coordinates = input_
