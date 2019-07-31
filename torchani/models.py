@@ -96,17 +96,16 @@ class BuiltinNet(torch.nn.Module):
 
     def forward(self, species_coordinates):
         """Calculates predicted properties for minibatch of conformations
-
         Arguments:
-            species_coordinates (:class:`tuple`): Minibatch of conformations, 
-                tuple where species and coordinates are :class:`torch.Tensor`
-                of shape ``(C, A)`` and ``(C, A, 3)`` respectively.
+            species_coordinates (:class:`tuple`[:class:`torch.Tensor`]):
+                Minibatch of conformations, tuple of tensors of shape ``(C,
+                A)`` and ``(C, A, 3)`` respectively.
 
         Returns:
-            tuple: tuple of species, shifted predicted energies for the given
-                configurations. Species is unchanged from the input and has
-                shape ``(C, A)`` and shifted_energies has shape ``(C,)`` (one
-                energy per conformation).
+            :class:`tuple`[:class:`torch.Tensor`]: tuple (species,
+                shifted-energies) for the given configurations. Species is
+                unchanged from the input and has shape ``(C, A)`` and
+                shifted_energies has shape ``(C,)``.
         """
         species_aevs = self.aev_computer(species_coordinates)
         # The energies are not shifted in species_energies
@@ -125,8 +124,7 @@ class BuiltinNet(torch.nn.Module):
             index (:class:`int`): Index of the model
 
         Returns:
-            ret (:class:`torch.nn.Sequential`): Sequential model ready for
-                calculations.
+            :class:`torch.nn.Sequential`: Sequential model ready for calculations.
         """
         ret = torch.nn.Sequential(
             self.aev_computer,
@@ -151,7 +149,7 @@ class BuiltinNet(torch.nn.Module):
         """Get the number of networks in the ensemble
 
         Returns:
-            length (:class:`int`): Number of networks in the ensemble
+            :class:`int`: Number of networks in the ensemble.
         """
         return len(self.neural_networks)
 
@@ -162,7 +160,7 @@ class BuiltinNet(torch.nn.Module):
             kwargs: ase.Calculator kwargs
 
         Returns:
-            calculator (:class:`int`): A calculator to be used with ASE
+            :class:`ase.Calculator`): A calculator to be used with the ASE library.
         """
         from . import ase
         return ase.Calculator(self.species, self.aev_computer,
@@ -170,15 +168,16 @@ class BuiltinNet(torch.nn.Module):
                               **kwargs)
 
     def species_to_tensor(self, *args, **kwargs):
-        """Convert species from strings to tensor.
+        """Converts species from strings to tensor.
 
         See also :method:`torchani.neurochem.Constant.species_to_tensor`
 
         Arguments:
-            species (:class:`str`): A string of chemical symbols
+            species (:class:`str` or :class:`collections.abs.Sequence`): A
+                string or iterable of chemical symbols.
 
         Returns:
-            tensor (:class:`torch.Tensor`): A 1D tensor of integers
+            :class:`torch.Tensor`: A 1D tensor of integers, ``dtype=torch.long``.
         """
         return self.consts.species_to_tensor(*args, **kwargs) \
             .to(self.aev_computer.ShfR.device)

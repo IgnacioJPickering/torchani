@@ -71,10 +71,10 @@ def present_species(species):
     """Given a vector of species of atoms, compute the unique species present.
 
     Arguments:
-        species (:class:`torch.Tensor`): 1D vector of shape ``(atoms,)``
+        species (:class:`torch.Tensor`): 1D tensor of shape ``(A,)``
 
     Returns:
-        :class:`torch.Tensor`: 1D vector storing present atom types sorted.
+        :class:`torch.Tensor`: 1D tensor storing unique present atom types sorted.
     """
     # present_species, _ = species.flatten()._unique(sorted=True)
     present_species = species.flatten().unique(sorted=True)
@@ -87,10 +87,10 @@ def strip_redundant_padding(atomic_properties):
     """Strip trailing padding atoms.
 
     Arguments:
-        atomic_properties (dict): properties to strip
+        atomic_properties (:class:`dict`): Properties to strip
 
     Returns:
-        dict: same set of properties with redundant padding atoms stripped.
+        :class:`dict`: Same set of properties with redundant padding atoms stripped.
     """
     species = atomic_properties['species']
     non_padding = (species >= 0).any(dim=0).nonzero().squeeze()
@@ -103,7 +103,7 @@ def map2central(cell, coordinates, pbc):
     """Map atoms outside the unit cell into the cell using PBC.
 
     Arguments:
-        cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three
+        cell (:class:`torch.Tensor`): tensor of shape ``(3, 3)`` of the three
             vectors defining unit cell:
 
             .. code-block:: python
@@ -113,13 +113,13 @@ def map2central(cell, coordinates, pbc):
                         [x3, y3, z3]])
 
         coordinates (:class:`torch.Tensor`): Tensor of shape
-            ``(molecules, atoms, 3)``.
+            ``(C, A, 3)``.
 
         pbc (:class:`torch.Tensor`): boolean vector of size 3 storing
-            if pbc is enabled for that direction.
+            if pbc is enabled for each direction.
 
     Returns:
-        :class:`torch.Tensor`: coordinates of atoms mapped back to unit cell.
+        :class:`torch.Tensor`: Coordinates of atoms mapped back to unit cell, shape ``(C, A, 3)``.
     """
     # Step 1: convert coordinates from standard cartesian coordinate to unit
     # cell coordinates
@@ -176,10 +176,10 @@ class EnergyShifter(torch.nn.Module):
 
         Arguments:
             species (:class:`torch.Tensor`): Long tensor in shape
-                ``(conformations, atoms)``.
+                ``(C, A)``.
 
         Returns:
-            :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
+            :class:`torch.Tensor`: 1D vector in shape ``(C,)``
                 for molecular self energies.
         """
         self_energies = self.self_energies[species]
@@ -211,11 +211,11 @@ class EnergyShifter(torch.nn.Module):
         are calculated from the SAE of the species.
 
         Arguments:
-            species_energies (:class:`tuple`): Tuple of tensors, species, shape ``(C, A)``
-            and energies, shape ``(C,)``.
+            species_energies (:class:`tuple`[:class:`torch.Tenosr`]): Tuple of,
+                species, shape ``(C, A)`` and energies, shape ``(C,)``.
 
         Returns:
-            species_energies (:class:`tuple`): Tuple of tensors, species, shape
+            :class:`tuple`[:class:`torch.Tensor`]: Tuple of species, shape
                 ``(C, A)`` (unchanged from input) and shifted energies, shape
                 ``(C,)``.
         """
@@ -228,19 +228,18 @@ class ChemicalSymbolsToInts:
     """Helper that can be called to convert chemical symbol string to integers
 
     Arguments:
-        all_species (:class:`collections.abc.Sequence` of :class:`str`):
+        all_species (:class:`collections.abc.Sequence`[:class:`str`]):
             sequence of all supported species, in order. 
 
     Note that this is a callable class, when an instance is called as a
     function it converts a sequence of strings to a 1D long tensor:
 
     Arguments:
-        species (iterable): Iterable of element symbols (either
-            :class:`str` or sequence of :class:`str`).
+        species (:class:`str` or :class:`list`[:class:`str`]): Iterable of element symbols.
 
     Returns: 
-        ints (:class:`torch.Tensor`): Tensor of `dtype=torch.long` that
-            holds the integer indices associated with the given species
+        :class:`torch.Tensor`: Tensor of ``dtype=torch.long`` that
+            holds the integer indices associated with the given species.
     """
 
     def __init__(self, all_species):
@@ -258,14 +257,14 @@ def hessian(coordinates, energies=None, forces=None):
     """Compute analytical hessian from the energy graph or force graph.
 
     Arguments:
-        coordinates (:class:`torch.Tensor`): Tensor of shape `(molecules,
-            atoms, 3)`
-        energies (:class:`torch.Tensor`): Tensor of shape `(molecules,)`, if
-            specified, then `forces` must be `None`. This energies must be
-            computed from `coordinates` in a graph.
-        forces (:class:`torch.Tensor`): Tensor of shape `(molecules, atoms,
-            3)`, if specified, then `energies` must be `None`. This forces must
-            be computed from `coordinates` in a graph.
+        coordinates (:class:`torch.Tensor`): Tensor of shape ``(C,
+            A, 3)``
+        energies (:class:`torch.Tensor`): Tensor of shape ``(C,)``, if
+            specified, then :attr:`forces`` must be ``None``. This energies
+            must be computed from :attr:`coordinates` in a graph.
+        forces (:class:`torch.Tensor`): Tensor of shape ``(C, A,
+            3)``, if specified, then :attr:`energies` must be ``None``. This
+            forces must be computed from :attr:`coordinates` in a graph.
 
     Returns:
         hessian (:class:`torch.Tensor`): Tensor of shape `(C, 3A, 3A)`
@@ -290,8 +289,8 @@ def vibrational_analysis(masses, hessian, unit='cm^-1'):
     """Computing the vibrational wavenumbers from hessian.
 
     Arguments:
-        hessian (:class:`torch.Tensor`): Hessian tensor of shape `(C, 3A, 3A)`.
-            (currently only supports `C=1`).
+        hessian (:class:`torch.Tensor`): Hessian tensor of shape ``(C, 3A, 3A)``.
+            (currently only supports ``C = 1``).
     Returns:
         tuple: wavenumbers, modes
     """

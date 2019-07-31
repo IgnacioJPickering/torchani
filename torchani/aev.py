@@ -88,15 +88,17 @@ def compute_shifts(cell, pbc, cutoff):
 
     Arguments:
         cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three
-        vectors defining unit cell:
-            tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
-        cutoff (float): the cutoff inside which atoms are considered pairs
+            vectors defining unit cell:
+                ..code-block:: python
+
+                cell = torch.tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
+
+        cutoff (:classs:`float`): the cutoff inside which atoms are considered pairs
         pbc (:class:`torch.Tensor`): boolean vector of size 3 storing
             if pbc is enabled for that direction.
 
     Returns:
-        :class:`torch.Tensor`: long tensor of shifts. the center cell and
-            symmetric cells are not included.
+        :class:`torch.Tensor`: Tensor of shifts, ``dtype=torch.long``. The center cell and symmetric cells are not included.
     """
     # type: (Tensor, Tensor, float) -> Tensor
     reciprocal_cell = cell.inverse().t()
@@ -130,13 +132,13 @@ def neighbor_pairs(padding_mask, coordinates, cell, shifts, cutoff):
 
     Arguments:
         padding_mask (:class:`torch.Tensor`): boolean tensor of shape
-            (molecules, atoms) for padding mask. 1 == is padding.
+            ``(C, A)`` for padding mask. 1 == is padding.
         coordinates (:class:`torch.Tensor`): tensor of shape
-            (molecules, atoms, 3) for atom coordinates.
-        cell (:class:`torch.Tensor`): tensor of shape (3, 3) of the three vectors
+            ``(C, A, 3)`` for atom coordinates.
+        cell (:class:`torch.Tensor`): tensor of shape ``(3, 3)`` of the three vectors
             defining unit cell: tensor([[x1, y1, z1], [x2, y2, z2], [x3, y3, z3]])
-        cutoff (float): the cutoff inside which atoms are considered pairs
-        shifts (:class:`torch.Tensor`): tensor of shape (?, 3) storing shifts
+        cutoff (:class:`float`): the cutoff inside which atoms are considered pairs
+        shifts (:class:`torch.Tensor`): tensor of shape ``(?, 3)`` storing shifts
     """
     # type: (Tensor, Tensor, Tensor, Tensor, float) -> Tuple[Tensor, Tensor, Tensor, Tensor]
 
@@ -421,33 +423,32 @@ class AEVComputer(torch.nn.Module):
         This usage is common for all torch forward methods.
 
         Arguments:
-            input_ (tuple): Can be one of the following two cases:
+            input_ (:class:`tuple`[:class:`torch.Tensor`]): Can be one of the following two cases:
 
                 If you don't care about periodic boundary conditions at all,
-                then input can be a tuple of two tensors: species and coordinates.
-                species must have shape ``(C, A)`` and coordinates must have
-                shape ``(C, A, 3)``, where ``C`` is the number of molecules
-                (conformations) in a chunk, and ``A`` is the number of atoms.
-                The last axis of the tensor holds the position of each atom in
-                cartesian coordinates.
+                then input can be a tuple species, shape
+                ``(C, A)``,  and coordinates, shape ``(C,
+                A, 3)``. Where ``C`` is the number of molecules
+                (conformations) in a minibatch, and ``A`` is the number of
+                atoms.
 
-                If you want to apply periodic boundary conditions, then the input
-                would be a tuple of four tensors: species, coordinates, cell, pbc
-                where species and coordinates are the same as described above, cell
-                is a tensor of shape (3, 3) of the three vectors defining unit cell:
+                If you want to apply periodic boundary conditions, then the
+                input would be a tuple: species, coordinates, cell, shape
+                ``(3,)`` and pbc, shape ``(3, 3)`` where species and
+                coordinates are the same as described above, cell holds the
+                three vectors defining unit cell, and pbc is boolean vector
+                storing whether pbc is enabled for each direction, for example:
 
                 .. code-block:: python
 
-                    tensor([[x1, y1, z1],
-                            [x2, y2, z2],
-                            [x3, y3, z3]])
+                    cell = torch.tensor([[x1, y1, z1],
+                                         [x2, y2, z2],
+                                         [x3, y3, z3]])
 
-                and pbc is boolean vector of size 3 storing if pbc is enabled
-                for that direction.
+                    pbc = torch.tensor([True, True, True])
 
         Returns:
-            tuple: Species and AEVs. Species are unchanged from the input, and
-                 AEVs is a tensor of shape ``(C, A, self.aev_length())``
+            :class:`tuple`[:class:`torch.Tensor`]: Species, unchanged from input, and AEVs, of shape ``(C, A, self.aev_length())``. 
         """
         if len(input_) == 2:
             species, coordinates = input_
