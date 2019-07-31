@@ -37,7 +37,7 @@ class ANIModel(torch.nn.ModuleList):
     def forward(self, species_aev):
         """Forward method for the module
 
-        This method is automatically called when an instance of the classs is
+        This method is automatically called when an instance of the class is
         called as a function. for example:
 
         .. code-block:: python

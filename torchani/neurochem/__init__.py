@@ -27,6 +27,7 @@ class Constants(collections.abc.Mapping):
     :class:`torchani.AEVComputer`, as in: 
 
     .. code-block:: python
+
         constants = torchani.Constants('filename')
         aev_computer = torchani.AEVComputer(**constants)
 
@@ -35,6 +36,7 @@ class Constants(collections.abc.Mapping):
     accessed as:
 
     .. code-block:: python
+
         constants = torchani.Constants('filename')
         r_cutoff_radial = constants('Rcr')
         r_cutoff_angular = constants('Rca')
