@@ -302,7 +302,7 @@ def load_model(species, dir_):
     Arguments:
         species (:class:`collections.abc.Sequence`): Sequence of strings for
             chemical symbols of each supported atom type in correct order.
-        dir_ (:class:`str`): String for directory storing network configurations.
+        dir_ (str): String for directory storing network configurations.
     Returns:
         :class:`torchani.ANIModel`: Instance of an ANIModel module.
     """
@@ -322,9 +322,9 @@ def load_model_ensemble(species, prefix, count):
     Arguments:
         species (:class:`collections.abc.Sequence`): Sequence of strings for
             chemical symbols of each supported atom type in correct order.
-        prefix (:class:`str`): Prefix of paths of directory that networks configurations
+        prefix (str): Prefix of paths of directory that networks configurations
             are stored.
-        count (:class:`int`): Number of models in the ensemble.
+        count (int): Number of models in the ensemble.
     Returns:
         :class:`torchani.Ensemble`: Ensemble of :class:`torchani.ANIModel` modules.
     """

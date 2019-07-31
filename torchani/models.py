@@ -23,8 +23,6 @@ directly calculate energies or get an ASE calculator. For example:
     # convert atom species from string to long tensor
     model0.species_to_tensor('CHHHH')
 
-Note that the class BuiltinModels can be accessed but it is deprecated and
-shouldn't be used anymore.
 """
 
 import torch
