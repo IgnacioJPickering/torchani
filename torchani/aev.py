@@ -448,7 +448,7 @@ class AEVComputer(torch.nn.Module):
                     pbc = torch.tensor([True, True, True])
 
         Returns:
-            :class:`tuple` of :class:`torch.Tensor`: Species, unchanged from input, and AEVs, of shape ``(C, A, self.aev_length())``. 
+            :class:`tuple` of :class:`torch.Tensor`: Species, unchanged, and AEVs, shape ``(C, A, self.aev_length())``. 
         """
         if len(input_) == 2:
             species, coordinates = input_

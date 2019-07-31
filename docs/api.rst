@@ -4,10 +4,13 @@ TorchANI
 .. autoclass:: torchani.AEVComputer
     :members:
 .. autoclass:: torchani.ANIModel
+    :members:
 .. autoclass:: torchani.Ensemble
+    :members:
 .. autoclass:: torchani.EnergyShifter
     :members:
 .. autoclass:: torchani.nn.Gaussian
+    :members:
 
 
 Model Zoo

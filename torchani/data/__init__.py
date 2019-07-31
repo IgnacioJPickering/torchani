@@ -219,7 +219,7 @@ def load_ani_dataset(path, species_tensor_converter, batch_size, shuffle=True,
                      properties=('energies',), atomic_properties=(), transform=(),
                      dtype=torch.get_default_dtype(), device=default_device,
                      split=(None,)):
-    """Load ANI dataset from hdf5 files, and split into subsets.
+    """Load ANI dataset from HDF5 files, and split into subsets.
 
     The return datasets are already a dataset of batches, so when iterated, a
     batch rather than a single data point will be yielded.

@@ -210,11 +210,11 @@ class EnergyShifter(torch.nn.Module):
         are calculated from the SAE of the species.
 
         Arguments:
-            species_energies (:class:`tuple` of :class:`torch.Tenosr`): Tuple of,
-                species, shape ``(C, A)`` and energies, shape ``(C,)``.
+            species_energies (:class:`tuple` of :class:`torch.Tenosr`): Tuple
+                of species, shape ``(C, A)`` and energies, shape ``(C,)``.
 
         Returns:
-            :class:`tuple` of :class:`torch.Tensor`: tuple of species, shape ``(C, A)`` (unchanged from input) and shifted energies, shape ``(C,)``.
+            :class:`tuple` of :class:`torch.Tensor`: species, unchanged, and shifted-energies, shape ``(C,)``.
         """
         species, energies = species_energies
         sae = self.sae(species).to(energies.dtype).to(energies.device)

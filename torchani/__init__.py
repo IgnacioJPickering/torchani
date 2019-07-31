@@ -7,7 +7,7 @@ molecules.  It also include tools to:
 
 - Deal with ANI datasets (e.g. `ANI-1`_,`ANI-1x`_, `ANI-1ccx`_, etc.) at :attr:`torchani.data`
 - Import various file formats of NeuroChem at :attr:`torchani.neurochem`
-- Interface with PyTorch's `ignite` at :attr:`torchani.ignite`
+- Interface with PyTorch's ignite library at :attr:`torchani.ignite`
 
 and more at :attr:`torchani.utils`.
 
