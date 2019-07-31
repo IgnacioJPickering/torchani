@@ -179,8 +179,7 @@ class EnergyShifter(torch.nn.Module):
                 ``(C, A)``.
 
         Returns:
-            :class:`torch.Tensor`: 1D vector in shape ``(C,)``
-                for molecular self energies.
+            :class:`torch.Tensor`: 1D vector in shape ``(C,)`` for molecular self energies.
         """
         self_energies = self.self_energies[species]
         self_energies[species == -1] = 0
@@ -215,9 +214,8 @@ class EnergyShifter(torch.nn.Module):
                 species, shape ``(C, A)`` and energies, shape ``(C,)``.
 
         Returns:
-            :class:`tuple` of :class:`torch.Tensor`: Tuple of species, shape
-                ``(C, A)`` (unchanged from input) and shifted energies, shape
-                ``(C,)``.
+            :class:`tuple` of :class:`torch.Tensor`: Tuple of species, shape ``(C, A)`` (unchanged
+                from input) and shifted energies, shape ``(C,)``.
         """
         species, energies = species_energies
         sae = self.sae(species).to(energies.dtype).to(energies.device)
@@ -235,11 +233,11 @@ class ChemicalSymbolsToInts:
     function it converts a sequence of strings to a 1D long tensor:
 
     Arguments:
-        species (:class:`str` or :class:`collections.abc.Sequence` of :class:`str`]): Iterable of element symbols.
+        species (:class:`str` or :class:`collections.abc.Sequence` of :class:`str`): Iterable of element symbols.
 
     Returns: 
-        :class:`torch.Tensor`: Tensor of ``dtype=torch.long`` that
-            holds the integer indices associated with the given species.
+        :class:`torch.Tensor`: Tensor of ``dtype=torch.long`` that holds the integer
+            indices associated with the given species.
     """
 
     def __init__(self, all_species):
@@ -267,9 +265,9 @@ def hessian(coordinates, energies=None, forces=None):
             forces must be computed from :attr:`coordinates` in a graph.
 
     Returns:
-        hessian (:class:`torch.Tensor`): Tensor of shape `(C, 3A, 3A)`
-            where A is the number of atoms in each molecule, and `C` is the
-            number of molecules (conformations) in the minibatch.
+        hessian (:class:`torch.Tensor`): Tensor of shape `(C, 3A, 3A)` where A is
+            the number of atoms in each molecule, and `C` is the number of molecules
+            (conformations) in the minibatch.
     """
     if energies is None and forces is None:
         raise ValueError('Energies or forces must be specified')

@@ -11,7 +11,7 @@ class ANIModel(torch.nn.ModuleList):
     different atoms to obtain molecular properties.
 
     Arguments:
-        modules (:class:`list`[:class:`torch.nn.Module`]): Sequence of modules
+        modules (:class:`list` of :class:`torch.nn.Module`): Sequence of modules
             for each atom type. Atom types are distinguished by their order in
             :attr:`modules`, which means, for example ``modules[i]`` must be
             the module for atom type ``i``.  Different atom types can share a
@@ -83,11 +83,10 @@ class Ensemble(torch.nn.ModuleList):
     same as the usual python :class:`list` methods.
     
     Arguments:
-        modules (:class:`list`[:class:`torch.nn.Module`]): An iterable of
+        modules (:class:`list` of :class:`torch.nn.Module`): An iterable of
             modules held inside the ensemble container. By default it is
             initialized as empty.
     """
-
     def forward(self, species_input):
         """Forward method for the module
 
