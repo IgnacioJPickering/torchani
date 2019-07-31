@@ -205,7 +205,7 @@ class EnergyShifter(torch.nn.Module):
 
         The forward method of this module is meant to be used in a pipeline
         ``input -> AEVComputer -> ANIModel -> EnergyShifter -> output``. It
-        is simply a componentwise addition that adds the shifts to the 
+        is simply a componentwise addition that adds the shifts to the
         energies of all the conformations. Shifts to the molecular energies
         are calculated from the SAE of the species.
 
@@ -214,8 +214,7 @@ class EnergyShifter(torch.nn.Module):
                 species, shape ``(C, A)`` and energies, shape ``(C,)``.
 
         Returns:
-            :class:`tuple` of :class:`torch.Tensor`: Tuple of species, shape ``(C, A)`` (unchanged
-                from input) and shifted energies, shape ``(C,)``.
+            :class:`tuple` of :class:`torch.Tensor`: tuple of species, shape ``(C, A)`` (unchanged from input) and shifted energies, shape ``(C,)``.
         """
         species, energies = species_energies
         sae = self.sae(species).to(energies.dtype).to(energies.device)
@@ -227,17 +226,16 @@ class ChemicalSymbolsToInts:
 
     Arguments:
         all_species (:class:`collections.abc.Sequence`[:class:`str`]):
-            sequence of all supported species, in order. 
+            sequence of all supported species, in order.
 
     Note that this is a callable class, when an instance is called as a
     function it converts a sequence of strings to a 1D long tensor:
 
     Arguments:
-        species (:class:`str` or :class:`collections.abc.Sequence` of :class:`str`): Iterable of element symbols.
+        species (:class:`str` or :class:`collections.abc.Sequence` of :class:`str`): iterable of element symbols.
 
-    Returns: 
-        :class:`torch.Tensor`: Tensor of ``dtype=torch.long`` that holds the integer
-            indices associated with the given species.
+    Returns:
+        :class:`torch.Tensor`: tensor of ``dtype=torch.long`` that holds the integer indices associated with the given species.
     """
 
     def __init__(self, all_species):
@@ -265,9 +263,7 @@ def hessian(coordinates, energies=None, forces=None):
             forces must be computed from :attr:`coordinates` in a graph.
 
     Returns:
-        hessian (:class:`torch.Tensor`): Tensor of shape `(C, 3A, 3A)` where A is
-            the number of atoms in each molecule, and `C` is the number of molecules
-            (conformations) in the minibatch.
+        :class:`torch.Tensor`: hessian tensor of shape ``(C, 3A, 3A)``.
     """
     if energies is None and forces is None:
         raise ValueError('Energies or forces must be specified')
@@ -287,8 +283,7 @@ def vibrational_analysis(masses, hessian, unit='cm^-1'):
     """Computing the vibrational wavenumbers from hessian.
 
     Arguments:
-        hessian (:class:`torch.Tensor`): Hessian tensor of shape ``(C, 3A, 3A)``.
-            (currently only supports ``C = 1``).
+        hessian (:class:`torch.Tensor`): Hessian tensor of shape ``(C, 3A, 3A)``. (currently only supports ``C = 1``).
     Returns:
         tuple: wavenumbers, modes
     """
