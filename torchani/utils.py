@@ -35,8 +35,8 @@ def pad(species):
 def pad_atomic_properties(atomic_properties, padding_values=defaultdict(lambda: 0.0, species=-1)):
     """Put a sequence of atomic properties together into single tensor.
 
-    Inputs are `[{'species': ..., ...}, {'species': ..., ...}, ...]` and the outputs
-    are `{'species': padded_tensor, ...}`
+    Inputs are `[{'species': ..., ...}, {'species': ..., ...}, ...]` and the
+    outputs are `{'species': padded_tensor, ...}`
 
     Arguments:
         species_coordinates (:class:`collections.abc.Sequence`): sequence of
@@ -229,7 +229,18 @@ class ChemicalSymbolsToInts:
 
     Arguments:
         all_species (:class:`collections.abc.Sequence` of :class:`str`):
-            sequence of all supported species, in order.
+            sequence of all supported species, in order. 
+
+    Note that this is a callable class, when an instance is called as a
+    function it converts a sequence of strings to a 1D long tensor:
+
+    Arguments:
+        species (iterable): Iterable of element symbols (either
+            :class:`str` or sequence of :class:`str`).
+
+    Returns: 
+        ints (:class:`torch.Tensor`): Tensor of `dtype=torch.long` that
+            holds the integer indices associated with the given species
     """
 
     def __init__(self, all_species):
@@ -247,17 +258,19 @@ def hessian(coordinates, energies=None, forces=None):
     """Compute analytical hessian from the energy graph or force graph.
 
     Arguments:
-        coordinates (:class:`torch.Tensor`): Tensor of shape `(molecules, atoms, 3)`
-        energies (:class:`torch.Tensor`): Tensor of shape `(molecules,)`, if specified,
-            then `forces` must be `None`. This energies must be computed from
-            `coordinates` in a graph.
-        forces (:class:`torch.Tensor`): Tensor of shape `(molecules, atoms, 3)`, if specified,
-            then `energies` must be `None`. This forces must be computed from
-            `coordinates` in a graph.
+        coordinates (:class:`torch.Tensor`): Tensor of shape `(molecules,
+            atoms, 3)`
+        energies (:class:`torch.Tensor`): Tensor of shape `(molecules,)`, if
+            specified, then `forces` must be `None`. This energies must be
+            computed from `coordinates` in a graph.
+        forces (:class:`torch.Tensor`): Tensor of shape `(molecules, atoms,
+            3)`, if specified, then `energies` must be `None`. This forces must
+            be computed from `coordinates` in a graph.
 
     Returns:
-        :class:`torch.Tensor`: Tensor of shape `(molecules, 3A, 3A)` where A is the number of
-        atoms in each molecule
+        hessian (:class:`torch.Tensor`): Tensor of shape `(C, 3A, 3A)`
+            where A is the number of atoms in each molecule, and `C` is the
+            number of molecules (conformations) in the minibatch.
     """
     if energies is None and forces is None:
         raise ValueError('Energies or forces must be specified')
@@ -274,7 +287,14 @@ def hessian(coordinates, energies=None, forces=None):
 
 
 def vibrational_analysis(masses, hessian, unit='cm^-1'):
-    """Computing the vibrational wavenumbers from hessian."""
+    """Computing the vibrational wavenumbers from hessian.
+
+    Arguments:
+        hessian (:class:`torch.Tensor`): Hessian tensor of shape `(C, 3A, 3A)`.
+            (currently only supports `C=1`).
+    Returns:
+        tuple: wavenumbers, modes
+    """
     if unit != 'cm^-1':
         raise ValueError('Only cm^-1 are supported right now')
     assert hessian.shape[0] == 1, 'Currently only supporting computing one molecule a time'

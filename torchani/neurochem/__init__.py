@@ -21,12 +21,58 @@ import textwrap
 
 
 class Constants(collections.abc.Mapping):
-    """NeuroChem constants. Objects of this class can be used as arguments
-    to :class:`torchani.AEVComputer`, like ``torchani.AEVComputer(**consts)``.
+    """NeuroChem constants class, dictionary-like
+    
+    Instances of this class can be used as arguments to initialize the module
+    :class:`torchani.AEVComputer`, as in: 
+
+    .. code-block:: python
+        constants = torchani.Constants('filename')
+        aev_computer = torchani.AEVComputer(**constants)
+
+    They are dictionary-like objects that hold all constants necessary to
+    compute the atomic environment vectors. Individual constants can be
+    accessed as:
+
+    .. code-block:: python
+        constants = torchani.Constants('filename')
+        r_cutoff_radial = constants('Rcr')
+        r_cutoff_angular = constants('Rca')
+        eta_radial = constants('EtaR')
+        eta_angular = constants('EtaA')
+        zeta = constants('Zeta')
+        shifts_radial = constants('ShfR')
+        shifts_angular = constants('ShfA')
+        shifts_angular_theta = constants('ShfZ')
+
+    Arguments:
+        filename (:class:`str`): Path to file that holds the AEV constants.
 
     Attributes:
-        species_to_tensor (:class:`ChemicalSymbolsToInts`): call to convert
-            string chemical symbols to 1d long tensor.
+        filename (:class:`str`): Path to file that holds the AEV constants.
+
+        species (:class:`list`[:class:`str`]): List chemical symbols of the
+            elements the AEV can describe.
+        num_species (:class:`int`): Number of species the AEV can describe
+            (length of :attr:`species`).
+        species_to_tensor (:class:`torchani.ChemicalSymbolsToInts`): Callable
+            instance of ChemicalSymbolsToInts. Call to convert string or
+            iterable of chemical symbols to a 1D :class:`torch.Tensor` of
+            `dtype=long`, holding the associated atomic numbers.
+
+        Rcr (:class:`float`): Value of the radial cutoff radius.
+        ShfR (:class:`list`[:class:`float`]): List of radial gaussian centers.
+        EtaR (:class:`list`[:class:`float`]): List of radial gaussian widths
+            (one element only for current builtin models).
+
+        Rca (:class:`float`): Value of the angular cutoff radius.
+        ShfA (:class:`list`[:class:`float`]): List of angular gaussian centers.
+        ShfZ (:class:`list`[:class:`float`]): List of angular cosine
+            displacements.
+        EtaA (:class:`list`[:class:`float`]): List of angular gaussian widths
+            (one element only for current builtin models).
+        Zeta (:class:`list`[:class:`float`]): List of angular Zeta exponents
+            (one element only for current builtin models).
     """
 
     def __init__(self, filename):
@@ -50,6 +96,7 @@ class Constants(collections.abc.Mapping):
                         self.species = value
                 except Exception:
                     raise ValueError('unable to parse const file')
+
         self.num_species = len(self.species)
         self.species_to_tensor = ChemicalSymbolsToInts(self.species)
 
@@ -72,8 +119,17 @@ class Constants(collections.abc.Mapping):
 
 
 def load_sae(filename):
-    """Returns an object of :class:`EnergyShifter` with self energies from
-    NeuroChem sae file"""
+    """Return an EnergyShifter module from a SAE file
+    
+    Returns an object of :class:`torchani.EnergyShifter` with self atomic energies taken from
+    a NeuroChem-style format sae file
+
+    Arguments:
+        filename (:class:`str`): Path to the NeuroChem `*.sae` file.
+    Returns:
+        energy_shifter (:class:`torchani.EnergyShifter`): EnergyShifter module that
+            adds shifts to molecular energies based on SAE energies.
+    """
     self_energies = []
     with open(filename) as f:
         for i in f:
@@ -100,8 +156,18 @@ def _get_activation(activation_index):
 
 
 def load_atomic_network(filename):
-    """Returns an instance of :class:`torch.nn.Sequential` with hyperparameters
-    and parameters loaded NeuroChem's .nnf, .wparam and .bparam files."""
+    """Returns an sequential atomic module
+    
+    Returns an instance of :class:`torch.nn.Sequential` with hyperparameters
+    and parameters loaded NeuroChem's .nnf, .wparam and .bparam files.
+
+    Arguments:
+        filename (:class:`str`): path to the `*.nnf` file
+    Returns:
+        atomic_module (:class:`torch.nn.Sequential`): Torch sequential module 
+            for a given atom. Many atomic modules are used to create one
+            ANIModel module.
+    """
 
     def decompress_nnf(buffer_):
         while buffer_[0] != b'='[0]:
@@ -228,13 +294,19 @@ def load_atomic_network(filename):
 
 
 def load_model(species, dir_):
-    """Returns an instance of :class:`torchani.ANIModel` loaded from
+    """Returns an  ani_model module
+    
+    Returns an instance of :class:`torchani.ANIModel` loaded from
     NeuroChem's network directory.
 
     Arguments:
         species (:class:`collections.abc.Sequence`): Sequence of strings for
             chemical symbols of each supported atom type in correct order.
-        dir_ (str): String for directory storing network configurations.
+        dir_ (:class:`str`): String for directory storing network configurations.
+    Returns:
+        ani_model (:class:`torchani.ANIModel`): Instance of an ANIModel module,
+            using the architecture found in the NeuroChem-style format `*.nnf`
+            file.
     """
     models = []
     for i in species:
@@ -244,15 +316,20 @@ def load_model(species, dir_):
 
 
 def load_model_ensemble(species, prefix, count):
-    """Returns an instance of :class:`torchani.Ensemble` loaded from
+    """Returns an ensemble of ANIModel modules
+    
+    Returns an instance of :class:`torchani.Ensemble` loaded from
     NeuroChem's network directories beginning with the given prefix.
 
     Arguments:
         species (:class:`collections.abc.Sequence`): Sequence of strings for
             chemical symbols of each supported atom type in correct order.
-        prefix (str): Prefix of paths of directory that networks configurations
+        prefix (:class:`str`): Prefix of paths of directory that networks configurations
             are stored.
-        count (int): Number of models in the ensemble.
+        count (:class:`int`): Number of models in the ensemble.
+    Returns:
+        ensemble (:class:`torchani.Ensemble`): Ensemble of
+            :class:`torchani.ANIModel` modules.
     """
     models = []
     for i in range(count):

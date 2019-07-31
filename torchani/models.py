@@ -52,12 +52,19 @@ class BuiltinNet(torch.nn.Module):
         const_file (:class:`str`): Path to the file with the builtin constants.
         sae_file (:class:`str`): Path to the file with the Self Atomic Energies.
         ensemble_prefix (:class:`str`): Prefix of directories.
+
         ensemble_size (:class:`int`): Number of models in the ensemble.
-        energy_shifter (:class:`torchani.EnergyShifter`): Energy shifter with
-            builtin Self Atomic Energies.
-        aev_computer (:class:`torchani.AEVComputer`): AEV computer with
-            builtin constants
-        neural_networks (:class:`torchani.Ensemble`): Ensemble of ANIModel networks
+        consts (:class:`torchani.neurochem.Constants`): AEV constants
+        species: Species the model can deal with
+
+        energy_shifter (:class:`torchani.EnergyShifter`): Energy shifter module with builtin SAEs.
+        aev_computer (:class:`torchani.AEVComputer`): AEV computer module with builtin constants.
+        neural_networks (:class:`torchani.Ensemble`): Ensemble of ANIModel networks module.
+
+    Arguments:
+        info_file (:class:`str`): Path to NeuroChem `model.info` file, 
+            which itself holds the file names for the constants file, 
+            SAE (self atomic energies) file and ensemble prefix.
     """
 
     def __init__(self, info_file):

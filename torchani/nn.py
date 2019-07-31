@@ -12,14 +12,14 @@ class ANIModel(torch.nn.ModuleList):
 
     Arguments:
         modules (:class:`collections.abc.Sequence`): Sequence of
-            :class:``torch.nn.Module`` modules for each atom type. Atom types
+            :class:`torch.nn.Module` modules for each atom type. Atom types
             are distinguished by their order in :attr:`modules`, which means,
             for example ``modules[i]`` must be the module for atom type ``i``.
             Different atom types can share a module by putting the same
             reference in :attr:`modules`.
         reducer (:class:`collections.abc.Callable`): The callable that reduce
             atomic outputs into molecular outputs. It must have signature
-            ``(tensor, dim)->tensor``.
+            `(tensor, dim) -> tensor`.
         padding_fill (float): The value to fill output of padding atoms.
             Padding values will participate in reducing, so this value should
             be appropriately chosen so that it has no effect on the result. For
@@ -55,10 +55,10 @@ class ANIModel(torch.nn.ModuleList):
                 anything; it is a fixed number for a given Bleher-Parrinello
                 style NN potential).
         Returns:
-            tuple: tuple which holds the species, of shape ``(C, A)``,
-                unchanged from the input, and output energies for each
+            tuple: tuple which holds the species, shape `(C, A)`, unchanged
+                from the input, and output energies, shape `(C,)` for each
                 conformation that are the reduction of the output for all atoms
-                (by default the sum), of shape ``(C,)``.
+                (by default the sum), of shape `(C,)`.
         """
         species, aev = species_aev
         species_ = species.flatten()
@@ -110,16 +110,14 @@ class Ensemble(torch.nn.ModuleList):
 
         Arguments:
             species_input (:class:`tuple`): tuple of ``torch.Tensor`` objects, 
-                species, of shape ``(C, A)`` and input, of shape ``(C, A, ?)``.
-                In general, input will be a minibatch of species_aev, but this
-                is not necessary in principle 
+                species, shape ``(C, A)`` and input, shape ``(C, A, ?)``.  In
+                general, input will be a minibatch of species_aev, but this is
+                not necessary.
         Returns:
-            tuple: tuple which holds the species and one output that is the
-                average of all ANIModel instance outputs (after their
-                respective reductions). Species is of shape ``(C, A)``, 
-                unchanged from the input, and the average output is
-                of shape ``(C,)`` (one energy per conformation).
-
+            tuple: tuple which holds the species, shape `(C, A)` unchanged from
+                input, and average outputs, shpae `(C,)`. The outputs average
+                all ANIModel instance outputs (after their respective
+                reductions).  Basically, one energy per conformation.
         """
         outputs = [module(species_input)[1] for module in self]
         species, _ = species_input
