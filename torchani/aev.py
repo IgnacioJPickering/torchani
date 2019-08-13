@@ -378,7 +378,7 @@ class AEVComputer(torch.nn.Module):
         """Legacy constructor
 
         Builds the aev_computer from a NC-style .params file"""
-        aev_constants = neurochem.build_aev_constants_dict(file_name)
+        aev_constants, _ = neurochem.build_aev_constants_dict(file_name)
         return cls(**aev_constants)
 
     def constants(self):
