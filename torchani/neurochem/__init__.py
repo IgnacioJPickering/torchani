@@ -20,7 +20,7 @@ from ..optim import AdamW
 def build_aev_constants_dict(file_name):
     """Read a dictionary of AEV constants
 
-    Used to interface with legacy NC-style .const files. 
+    Used to interface with legacy NC-style .params files. 
     Reads the constants in the file into a dictionary
     """
     lines = []
