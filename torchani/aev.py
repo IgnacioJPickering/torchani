@@ -4,6 +4,7 @@ from . import _six  # noqa:F401
 import math
 from torch import Tensor
 from typing import Tuple
+from torchani import neurochem
 
 
 # @torch.jit.script
@@ -371,6 +372,14 @@ class AEVComputer(torch.nn.Module):
         default_shifts = compute_shifts(default_cell, default_pbc, cutoff)
         self.register_buffer('default_cell', default_cell)
         self.register_buffer('default_shifts', default_shifts)
+
+    @classmethod
+    def from_const_file(cls,file_name):
+        """Legacy constructor
+
+        Builds the aev_computer from a NC-style .params file"""
+        aev_constants = neurochem.build_aev_constants_dict(file_name)
+        return cls(**aev_constants)
 
     def constants(self):
         return self.Rcr, self.EtaR, self.ShfR, self.Rca, self.ShfZ, self.EtaA, self.Zeta, self.ShfA
