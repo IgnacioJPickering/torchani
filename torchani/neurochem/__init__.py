@@ -17,6 +17,42 @@ from ..utils import EnergyShifter, ChemicalSymbolsToInts
 from ..aev import AEVComputer
 from ..optim import AdamW
 
+def build_aev_constants_dict(file_name):
+    """Read a dictionary of AEV constants
+
+    Used to interface with legacy NC-style .const files. 
+    Reads the constants in the file into a dictionary
+    """
+    lines = []
+    with open(file_name) as f:
+        for raw_line in f:
+            lines.append([x.strip() for x in raw_line.split('=')])
+    aev_constants = {}
+    for line in lines:
+        try:
+            name = line[0]
+            value = line[1]
+            if name in ['Rcr', 'Rca']:
+                value = float(value)
+                aev_constants.update({name: value})
+            elif name in ['EtaR', 'ShfR', 'Zeta', 'ShfZ', 'EtaA', 'ShfA']:
+                value = [
+                    float(x.strip()) for x in value.replace(
+                        '[', '').replace(']', '').split(',')
+                ]
+                value = torch.tensor(value)
+                aev_constants.update({name: value})
+            elif name == 'Atyp':
+                value = [
+                    x.strip() for x in value.replace('[', '').replace(
+                        ']', '').split(',')
+                ]
+                species = value
+                num_species = len(value)
+                aev_constants.update({'num_species': num_species})
+        except Exception:
+            raise ValueError('Unable to parse const file')
+    return aev_constants, species
 
 class Constants(collections.abc.Mapping):
     """NeuroChem constants. Objects of this class can be used as arguments
@@ -29,26 +65,9 @@ class Constants(collections.abc.Mapping):
 
     def __init__(self, filename):
         self.filename = filename
-        with open(filename) as f:
-            for i in f:
-                try:
-                    line = [x.strip() for x in i.split('=')]
-                    name = line[0]
-                    value = line[1]
-                    if name == 'Rcr' or name == 'Rca':
-                        setattr(self, name, float(value))
-                    elif name in ['EtaR', 'ShfR', 'Zeta',
-                                  'ShfZ', 'EtaA', 'ShfA']:
-                        value = [float(x.strip()) for x in value.replace(
-                            '[', '').replace(']', '').split(',')]
-                        setattr(self, name, torch.tensor(value))
-                    elif name == 'Atyp':
-                        value = [x.strip() for x in value.replace(
-                            '[', '').replace(']', '').split(',')]
-                        self.species = value
-                except Exception:
-                    raise ValueError('unable to parse const file')
-        self.num_species = len(self.species)
+        aev_constants, self.species = build_aev_constants_dict(filename)
+        for k, v in aev_constants.items():
+            setattr(self, key, torch.tensor(value))
         self.species_to_tensor = ChemicalSymbolsToInts(self.species)
 
     def __iter__(self):
