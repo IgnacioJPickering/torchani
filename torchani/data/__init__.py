@@ -193,26 +193,6 @@ class PaddedBatchChunkDataset(Dataset):
         return len(self.batches)
 
 
-class BatchedANIDataset(PaddedBatchChunkDataset):
-    """Same as :func:`torchani.data.load_ani_dataset`. This API has been deprecated."""
-
-    def __init__(self, path, species_tensor_converter, batch_size,
-                 shuffle=True, properties=('energies',), atomic_properties=(), transform=(),
-                 dtype=torch.get_default_dtype(), device=default_device):
-        self.properties = properties
-        self.atomic_properties = atomic_properties
-        warnings.warn("BatchedANIDataset is deprecated; use load_ani_dataset()", DeprecationWarning)
-
-        atomic_properties, properties = load_and_pad_whole_dataset(
-            path, species_tensor_converter, shuffle, properties, atomic_properties)
-
-        # do transformations on data
-        for t in transform:
-            atomic_properties, properties = t(atomic_properties, properties)
-
-        super().__init__(atomic_properties, properties, batch_size, dtype, device)
-
-
 def load_ani_dataset(path, species_tensor_converter, batch_size, shuffle=True,
                      rm_outlier=False, properties=('energies',), atomic_properties=(),
                      transform=(), dtype=torch.get_default_dtype(), device=default_device,
