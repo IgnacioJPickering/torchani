@@ -1,6 +1,6 @@
 r"""Parse neurochem resources to be used for loading ANI builtin models or specific modules"""
 from enum import Enum
-from . import Constants
+from . import load_species
 from pkg_resources import resource_filename
 
 class InfoData(Enum):
@@ -33,7 +33,7 @@ def get_from_info_file(info_file_path, data_id):
 
     if data_id is InfoData.SPECIES:
         data = _resolve_resource_path(data)
-        return Constants(data).species
+        return load_species(data)
 
     return _resolve_resource_path(data)
 

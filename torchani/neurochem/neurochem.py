@@ -18,10 +18,49 @@ from torch.optim import AdamW
 from collections import OrderedDict
 from torchani.units import hartree2kcalmol
 
+def load_constants(filename):
+    constants = dict()
+    with open(filename) as f:
+        for i in f:
+            try:
+                line = [x.strip() for x in i.split('=')]
+                name = line[0]
+                value = line[1]
+                if name == 'Rcr' or name == 'Rca':
+                    constants.update({name : float(value)})
+                elif name in ['EtaR', 'ShfR', 'Zeta',
+                              'ShfZ', 'EtaA', 'ShfA']:
+                    value = [float(x.strip()) for x in value.replace(
+                        '[', '').replace(']', '').split(',')]
+                    constants.update({name : torch.tensor(value)})
+                elif name == 'Atyp':
+                    value = len([x.strip() for x in value.replace(
+                        '[', '').replace(']', '').split(',')])
+                    constants.update({'num_species' : value})
+            except Exception:
+                raise ValueError('Unable to parse const file')
+    return constants
+
+def load_species(filename):
+    with open(filename) as f:
+        for i in f:
+            try:
+                line = [x.strip() for x in i.split('=')]
+                name = line[0]
+                value = line[1]
+                if name == 'Atyp':
+                    species = [x.strip() for x in value.replace(
+                        '[', '').replace(']', '').split(',')]
+            except Exception:
+                raise ValueError('Unable to parse const file')
+    return species
+
 
 class Constants(collections.abc.Mapping):
     """NeuroChem constants. Objects of this class can be used as arguments
     to :class:`torchani.AEVComputer`, like ``torchani.AEVComputer(**consts)``.
+
+    This class is deprecated, don't use!
 
     Attributes:
         species_to_tensor (:class:`ChemicalSymbolsToInts`): call to convert
@@ -492,8 +531,9 @@ if sys.version_info[0] > 2:
 
             # load parameters
             self.const_file = os.path.join(dir_, params['sflparamsfile'])
-            self.consts = Constants(self.const_file)
-            self.aev_computer = AEVComputer(**self.consts)
+            constants = load_constants(self.const_file)
+            self.species = load_species(self.const_file)
+            self.aev_computer = AEVComputer(**constants)
             del params['sflparamsfile']
             self.sae_file = os.path.join(dir_, params['atomEnergyFile'])
             self.shift_energy, self.sae = load_sae(self.sae_file, return_dict=True)
@@ -524,7 +564,7 @@ if sys.version_info[0] > 2:
             if input_size != self.aev_computer.aev_length:
                 raise ValueError('AEV size and input size does not match')
             atomic_nets = OrderedDict()
-            for atom_type in self.consts.species:
+            for atom_type in self.species:
                 layers = network_setup[atom_type]
                 modules = []
                 i = input_size
@@ -668,4 +708,4 @@ if sys.version_info[0] > 2:
                     self.tensorboard.add_scalar('time_vs_epoch', elapsed, AdamW_scheduler.last_epoch)
 
 
-__all__ = ['Constants', 'load_sae', 'load_model', 'load_model_ensemble', 'Trainer', 'load_self_energies', '_load_atomic_network_modules']
+__all__ = ['load_species', 'load_constants', 'Constants', 'load_sae', 'load_model', 'load_model_ensemble', 'Trainer', 'load_self_energies', '_load_atomic_network_modules']
