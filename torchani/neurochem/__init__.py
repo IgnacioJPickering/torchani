@@ -17,6 +17,7 @@ from ..aev import AEVComputer
 from torch.optim import AdamW
 from collections import OrderedDict
 from torchani.units import hartree2kcalmol
+from .parse_resources import parse_info_file, get_from_info_file, InfoData
 
 
 class Constants(collections.abc.Mapping):
@@ -87,6 +88,24 @@ def load_sae(filename, return_dict=False):
     if return_dict:
         return EnergyShifter(self_energies), d
     return EnergyShifter(self_energies)
+
+def load_self_energies(filename, return_dict=False):
+    """Returns an object of :class:`EnergyShifter` with self energies from
+    NeuroChem sae file"""
+    self_energies = []
+    d = {}
+    with open(filename) as f:
+        for i in f:
+            line = [x.strip() for x in i.split('=')]
+            species = line[0].split(',')[0].strip()
+            index = int(line[0].split(',')[1].strip())
+            value = float(line[1])
+            d[species] = value
+            self_energies.append((index, value))
+    self_energies = [i for _, i in sorted(self_energies)]
+    if return_dict:
+        return self_energies, d
+    return self_energies
 
 
 def _get_activation(activation_index):
@@ -644,4 +663,4 @@ if sys.version_info[0] > 2:
                     self.tensorboard.add_scalar('time_vs_epoch', elapsed, AdamW_scheduler.last_epoch)
 
 
-__all__ = ['Constants', 'load_sae', 'load_model', 'load_model_ensemble', 'Trainer']
+__all__ = ['Constants', 'load_sae', 'load_self_energies', 'load_model', 'load_model_ensemble', 'Trainer', 'parse_info_file', 'get_from_info_file', 'InfoData']
