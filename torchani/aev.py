@@ -388,6 +388,11 @@ class AEVComputer(torch.nn.Module):
         self.register_buffer('default_cell', default_cell)
         self.register_buffer('default_shifts', default_shifts)
 
+    @classmethod
+    def from_neurochem_resource(cls, info_file_path):
+        const_file = neurochem.get_from_info_file(info_file_path, InfoData.CONSTS)
+        return cls(**neurochem.Constants(const_file))
+
     def constants(self):
         return self.Rcr, self.EtaR, self.ShfR, self.Rca, self.ShfZ, self.EtaA, self.Zeta, self.ShfA
 
