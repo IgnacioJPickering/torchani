@@ -236,6 +236,11 @@ class ChemicalSymbolsToInts:
     def __init__(self, all_species):
         self.rev_species = {s: i for i, s in enumerate(all_species)}
 
+    @classmethod
+    def from_neurochem_resource(info_file_path):
+        const_file = get_from_info_file(info_file_path, InfoData.CONSTS)
+        return cls(neurochem.Constants(species).value)
+
     def __call__(self, species):
         r"""Convert species from sequence of strings to 1D tensor"""
         rev = [self.rev_species[s] for s in species]
