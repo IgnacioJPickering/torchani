@@ -40,28 +40,25 @@ from .utils import ChemicalSymbolsToInts, EnergyShifter
 class BuiltinModel(torch.nn.Module):
     r"""Private template for the builtin ANI models """
 
-    def __init__(self, species_converter, aev_computer, neural_networks, energy_shifter, species_to_tensor, sae_dict, periodic_table_index):
+    def __init__(self, species_converter, aev_computer, neural_networks, energy_shifter, species_to_tensor, periodic_table_index):
         super(BuiltinModel, self).__init__()
+        # converters chemical_symbols -> indices  and atomic_numbers -> indices
         self.species_converter = species_converter
         self._species_to_tensor = species_to_tensor
-
+        
+        # main modules
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
         self.energy_shifter = energy_shifter
-
-        self.species = species_to_tensor.species
+        
+        # other attributes
         self.periodic_table_index = periodic_table_index
-
-        # a bit useless maybe
-        self.sae_dict = sae_dict
+        self.species = species_to_tensor.species
+        self.sae_dict = energy_shifter.sae_dict
 
     @classmethod
     def from_neurochem_resource(cls, info_file_path, periodic_table_index=False, model_index=0):
         # this is used to load only 1 model (by default model 0)
-        # this check should be performed by ANIModel
-        #if (model_index >= ensemble_size):
-        #    raise ValueError("The ensemble size is only {}, model {} can't be loaded".format(ensemble_size, model_index))
-
         species_converter = SpeciesConverter.from_neurochem_resource(info_file_path)
         species_to_tensor = ChemicalSymbolsToInts.from_neurochem_resource(info_file_path)
 
@@ -69,12 +66,8 @@ class BuiltinModel(torch.nn.Module):
         neural_networks = ANIModel.from_neurochem_resource(info_file_path, model_index)
         energy_shifter = EnergyShifter.from_neurochem_resource(info_file_path)
 
-        # for useless variables
-        sae_file, _, _ = cls._parse_neurochem_resources(info_file_path)
-        _, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
-
         return cls(species_converter, aev_computer, neural_networks,
-                   energy_shifter, species_to_tensor, sae_dict, periodic_table_index)
+                   energy_shifter, species_to_tensor, periodic_table_index)
 
     @staticmethod
     def _parse_neurochem_resources(info_file_path):
@@ -190,13 +183,12 @@ class BuiltinEnsemble(BuiltinModel):
     """
 
     def __init__(self, species_converter, aev_computer, neural_networks,
-                 energy_shifter, species_to_tensor, sae_dict, periodic_table_index):
+                 energy_shifter, species_to_tensor, periodic_table_index):
         super(BuiltinEnsemble, self).__init__(species_converter,
                                               aev_computer,
                                               neural_networks,
                                               energy_shifter,
                                               species_to_tensor,
-                                              sae_dict,
                                               periodic_table_index)
 
     @classmethod
@@ -209,11 +201,8 @@ class BuiltinEnsemble(BuiltinModel):
         neural_networks = Ensemble.from_neurochem_resource(info_file_path)
         energy_shifter = EnergyShifter.from_neurochem_resource(info_file_path)
 
-        sae_file, _, _ = cls._parse_neurochem_resources(info_file_path)
-        _, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
-
         return cls(species_converter, aev_computer, neural_networks,
-                   energy_shifter, species_to_tensor, sae_dict, periodic_table_index)
+                   energy_shifter, species_to_tensor, periodic_table_index)
 
     def __getitem__(self, index):
         """Get a single 'AEVComputer -> ANIModel -> EnergyShifter' sequential model
@@ -234,7 +223,7 @@ class BuiltinEnsemble(BuiltinModel):
         """
         ret = BuiltinModel(self.species_converter, self.aev_computer,
                            self.neural_networks[index], self.energy_shifter,
-                           self._species_to_tensor, self.sae_dict,
+                           self._species_to_tensor,
                            self.periodic_table_index)
         return ret
 

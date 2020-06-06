@@ -114,10 +114,10 @@ def load_sae(filename, return_dict=False):
     NeuroChem sae file"""
     if return_dict:
         self_energies, d = load_self_energies(filename=filename, return_dict=return_dict)
-        return EnergyShifter(self_energies), d
+        return EnergyShifter(self_energies, sae_dict = d), d
 
     self_energies = load_self_energies(filename=filename, return_dict=return_dict)
-    return EnergyShifter(self_energies)
+    return EnergyShifter(self_energies, sae_dict = d)
 
 def load_self_energies(filename, return_dict=False):
     # Returns a list of self energies from
@@ -294,6 +294,7 @@ def _load_atomic_network_modules(species, dir_, dir_is_prefix=False, model_index
     # Arguments: species (:class:`collections.abc.Sequence`): Sequence of
     # strings for chemical symbols of each supported atom type in correct
     # order.  dir_ (str): String for directory storing network configurations.
+
     if dir_is_prefix:
         assert model_index is not None , "Model index has to be specified if reading from prefix"
         dir_ = os.path.join('{}{}'.format(dir_, model_index), 'networks')

@@ -152,14 +152,15 @@ class EnergyShifter(torch.nn.Module):
             fit. The intercept will also be taken into account to shift energies.
     """
 
-    def __init__(self, self_energies, fit_intercept=False):
+    def __init__(self, self_energies=None, fit_intercept=False, sae_dict=None):
         super(EnergyShifter, self).__init__()
-
+        
         self.fit_intercept = fit_intercept
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.double)
 
         self.register_buffer('self_energies', self_energies)
+        self.sae_dict = sae_dict
 
     @classmethod
     def from_neurochem_resource(cls, info_file_path):

@@ -55,6 +55,10 @@ class ANIModel(torch.nn.ModuleDict):
     def from_neurochem_resource(cls, info_file_path, model_index):
         from . import neurochem
         from .neurochem import get_from_info_file, InfoData
+        size = get_from_info_file(info_file_path, InfoData.SIZE)
+        if (model_index >= size):
+            raise ValueError("The ensemble size is only {}, model {} can't be loaded".format(ensemble_size, model_index))
+
         prefix = get_from_info_file(info_file_path, InfoData.PREFIX)
         species = get_from_info_file(info_file_path, InfoData.SPECIES)
         modules = neurochem._load_atomic_network_modules(species, prefix, dir_is_prefix=True, model_index=model_index)
