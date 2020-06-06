@@ -52,9 +52,11 @@ class ANIModel(torch.nn.ModuleDict):
         super(ANIModel, self).__init__(self.ensureOrderedDict(modules))
 
     @classmethod
-    def from_neurochem_resource(cls, info_file_path):
-        const_file = get_from_info_file(info_file_path, InfoData.CONSTS)
-        return cls(neurochem.Constants(const_file).species)
+    def from_neurochem_resource(cls, info_file_path, model_index):
+        prefix = get_from_info_file(info_file_path, InfoData.PREFIX)
+        species = get_from_info_file(info_file_path, InfoData.SPECIES)
+        modules = neurochem._load_atomic_network_modules(species, prefix, dir_is_prefix=True, model_index=model_index)
+        return cls(modules)
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -81,6 +83,14 @@ class Ensemble(torch.nn.ModuleList):
     def __init__(self, modules):
         super().__init__(modules)
         self.size = len(modules)
+
+    @classmethod
+    def from_neurochem_resource(cls, info_file_path):
+        prefix = get_from_info_file(info_file_path, InfoData.PREFIX)
+        species = get_from_info_file(info_file_path, InfoData.SPECIES)
+        ensemble_size = get_from_info_file(info_file_path, InfoData.SIZE)
+        module_list = [ANIModel.from_neurochem_resource(species, prefix, dir_is_prefix=True, model_index=j) for j in range(ensemble_size) ]
+        return cls(module_list)
 
     def forward(self, species_input: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,

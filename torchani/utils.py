@@ -238,8 +238,8 @@ class ChemicalSymbolsToInts:
 
     @classmethod
     def from_neurochem_resource(info_file_path):
-        const_file = get_from_info_file(info_file_path, InfoData.CONSTS)
-        return cls(neurochem.Constants(species).value)
+        species = get_from_info_file(info_file_path, InfoData.SPECIES)
+        return cls(species)
 
     def __call__(self, species):
         r"""Convert species from sequence of strings to 1D tensor"""

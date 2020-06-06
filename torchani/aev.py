@@ -390,8 +390,9 @@ class AEVComputer(torch.nn.Module):
 
     @classmethod
     def from_neurochem_resource(cls, info_file_path):
-        const_file = neurochem.get_from_info_file(info_file_path, InfoData.CONSTS)
-        return cls(**neurochem.Constants(const_file))
+        from .neurochem import InfoData, Constants, parse_resources
+        const_file = parse_resources.get_from_info_file(info_file_path, InfoData.CONSTS)
+        return cls(**Constants(const_file))
 
     def constants(self):
         return self.Rcr, self.EtaR, self.ShfR, self.Rca, self.ShfZ, self.EtaA, self.Zeta, self.ShfA
