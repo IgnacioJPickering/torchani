@@ -1,3 +1,4 @@
+
 import torch
 from torch import Tensor
 import torch.utils.data
@@ -161,9 +162,11 @@ class EnergyShifter(torch.nn.Module):
         self.register_buffer('self_energies', self_energies)
 
     @classmethod
-    def from_neurochem_resource(info_file_path):
+    def from_neurochem_resource(cls, info_file_path):
+        from . import neurochem
+        from .neurochem import get_from_info_file, InfoData, load_self_energies
         sae_file = get_from_info_file(info_file_path, InfoData.SAE)
-        return cls(neurochem._load_self_energies(sae_file))
+        return cls(load_self_energies(sae_file))
 
     def sae(self, species):
         """Compute self energies for molecules.

@@ -74,13 +74,13 @@ def load_sae(filename, return_dict=False):
     """Returns an object of :class:`EnergyShifter` with self energies from
     NeuroChem sae file"""
     if return_dict:
-        self_energies, d = _load_self_energies(filename=filename, return_dict=return_dict)
+        self_energies, d = load_self_energies(filename=filename, return_dict=return_dict)
         return EnergyShifter(self_energies), d
 
-    self_energies = _load_self_energies(filename=filename, return_dict=return_dict)
+    self_energies = load_self_energies(filename=filename, return_dict=return_dict)
     return EnergyShifter(self_energies)
 
-def _load_self_energies(filename, return_dict=False):
+def load_self_energies(filename, return_dict=False):
     # Returns a list of self energies from
     # NeuroChem sae file
     self_energies = []
@@ -668,4 +668,4 @@ if sys.version_info[0] > 2:
                     self.tensorboard.add_scalar('time_vs_epoch', elapsed, AdamW_scheduler.last_epoch)
 
 
-__all__ = ['Constants', 'load_sae', 'load_model', 'load_model_ensemble', 'Trainer']
+__all__ = ['Constants', 'load_sae', 'load_model', 'load_model_ensemble', 'Trainer', 'load_self_energies']
