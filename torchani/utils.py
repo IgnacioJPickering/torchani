@@ -2,7 +2,7 @@ import torch
 from torch import Tensor
 import torch.utils.data
 import math
-from collections import defaultdict
+from collections import defaultdict, OrderedDict
 from typing import Tuple, NamedTuple, Optional
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
@@ -151,14 +151,34 @@ class EnergyShifter(torch.nn.Module):
             fit. The intercept will also be taken into account to shift energies.
     """
 
-    def __init__(self, self_energies=None, fit_intercept=False):
+    def __init__(self, self_energies=None, fit_intercept=False, sae_dict=None):
         super(EnergyShifter, self).__init__()
 
-        self.fit_intercept = fit_intercept
-        if self_energies is not None:
-            self_energies = torch.tensor(self_energies, dtype=torch.double)
+        if not isinstance(sae_dict, [OrderedDict, None])
+            raise ValueError("sae_dict must be of class collections.OrderedDict or None")
+
+        if sae_dict is not None:
+            # if only sae_dict is specified, then self_energies is deduced
+            # from it, otherwise a consistency check is performed
+
+            if self_energies is None:
+                self_energies = [v for k, v in sae_dict.items()]
+            else:
+                for self_e, dict_self_e in zip(self_energies, sae_dict.values()):
+                    assert self_e == dict_self_e, "sae_dict and self_energies are not consistent"
+
+            # buffers are registered for each species if sae_dict is specified,
+            # which allows recovering species when loading a state_dict
+            # of the energy_shifter
+            for k, v in sae_dict.items()
+                self.register_buffer(k, torch.tensor(v, dtype=torch.double))
+        else:
+            if self_energies is not None:
+                self_energies = torch.tensor(self_energies, dtype=torch.double)
 
         self.register_buffer('self_energies', self_energies)
+        self.fit_intercept = fit_intercept
+
 
     def sae(self, species):
         """Compute self energies for molecules.

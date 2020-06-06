@@ -74,19 +74,19 @@ def load_sae(filename, return_dict=False):
     """Returns an object of :class:`EnergyShifter` with self energies from
     NeuroChem sae file"""
     self_energies = []
-    d = {}
+    sae_dict = OrderedDict()
     with open(filename) as f:
         for i in f:
             line = [x.strip() for x in i.split('=')]
             species = line[0].split(',')[0].strip()
             index = int(line[0].split(',')[1].strip())
             value = float(line[1])
-            d[species] = value
+            sae_dict[species] = value
             self_energies.append((index, value))
     self_energies = [i for _, i in sorted(self_energies)]
     if return_dict:
-        return EnergyShifter(self_energies), d
-    return EnergyShifter(self_energies)
+        return EnergyShifter(sae_dict=sae_dict), sae_dict
+    return EnergyShifter(sae_dict=sae_dict)
 
 
 def _get_activation(activation_index):
