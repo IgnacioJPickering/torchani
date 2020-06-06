@@ -154,7 +154,7 @@ class EnergyShifter(torch.nn.Module):
     def __init__(self, self_energies=None, fit_intercept=False, sae_dict=None):
         super(EnergyShifter, self).__init__()
 
-        if not isinstance(sae_dict, [OrderedDict, None])
+        if not isinstance(sae_dict, [OrderedDict, None]):
             raise ValueError("sae_dict must be of class collections.OrderedDict or None")
 
         if sae_dict is not None:
@@ -170,7 +170,7 @@ class EnergyShifter(torch.nn.Module):
             # buffers are registered for each species if sae_dict is specified,
             # which allows recovering species when loading a state_dict
             # of the energy_shifter
-            for k, v in sae_dict.items()
+            for k, v in sae_dict.items():
                 self.register_buffer(k, torch.tensor(v, dtype=torch.double))
         else:
             if self_energies is not None:
@@ -178,7 +178,6 @@ class EnergyShifter(torch.nn.Module):
 
         self.register_buffer('self_energies', self_energies)
         self.fit_intercept = fit_intercept
-
 
     def sae(self, species):
         """Compute self energies for molecules.

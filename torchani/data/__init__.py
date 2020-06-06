@@ -158,7 +158,7 @@ class Transformations:
             for s, e in zip(species, sae_):
                 self_energies[s] = e
             sae_dict = OrderedDict(zip(species, sae))
-            shifter.__init__(sae_dict=sae_dict, shifter.fit_intercept)
+            shifter.__init__(sae_dict=sae_dict, fit_intercept=shifter.fit_intercept)
         gc.collect()
 
         def reenterable_iterable_factory():
