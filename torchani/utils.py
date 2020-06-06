@@ -163,7 +163,7 @@ class EnergyShifter(torch.nn.Module):
     @classmethod
     def from_neurochem_resource(info_file_path):
         sae_file = get_from_info_file(info_file_path, InfoData.SAE)
-        return cls(neurochem.load_self_energies(sae_file))
+        return cls(neurochem._load_self_energies(sae_file))
 
     def sae(self, species):
         """Compute self energies for molecules.

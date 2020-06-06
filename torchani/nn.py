@@ -51,6 +51,10 @@ class ANIModel(torch.nn.ModuleDict):
     def __init__(self, modules):
         super(ANIModel, self).__init__(self.ensureOrderedDict(modules))
 
+    @classmethod
+    def from_neurochem_resource(cls, info_file_path):
+        const_file = get_from_info_file(info_file_path, InfoData.CONSTS)
+        return cls(neurochem.Constants(const_file).species)
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
