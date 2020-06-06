@@ -149,6 +149,9 @@ class EnergyShifter(torch.nn.Module):
             be in order, i.e. ``self_energies[i]`` should be atom type ``i``.
         fit_intercept (bool): Whether to calculate the intercept during the LSTSQ
             fit. The intercept will also be taken into account to shift energies.
+        sae_dict(:class:`collections.OrderedDict`): An ordered dict of 
+            element - self_energy pairs, if passed then each self energy is 
+            individually stored as a buffer in the module.
     """
 
     def __init__(self, self_energies=None, fit_intercept=False, sae_dict=None):
