@@ -56,7 +56,7 @@ import importlib
 import functools
 import math
 import random
-from collections import Counter
+from collections import Counter, OrderedDict
 import numpy
 import gc
 
@@ -157,7 +157,8 @@ class Transformations:
                 sae_ = sae[:-1]
             for s, e in zip(species, sae_):
                 self_energies[s] = e
-            shifter.__init__(sae, shifter.fit_intercept)
+            sae_dict = OrderedDict(zip(species, sae))
+            shifter.__init__(sae_dict=sae_dict, shifter.fit_intercept)
         gc.collect()
 
         def reenterable_iterable_factory():
