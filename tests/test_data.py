@@ -99,7 +99,7 @@ class TestData(unittest.TestCase):
         self.assertTrue(entered)
 
     def testShapeInference(self):
-        shifter = torchani.EnergyShifter(None)
+        shifter = torchani.EnergyShifter()
         ds = torchani.data.load(dataset_path).subtract_self_energies(shifter)
         len(ds)
         ds = ds.species_to_indices()
@@ -110,7 +110,7 @@ class TestData(unittest.TestCase):
         len(ds)
 
     def testDataloader(self):
-        shifter = torchani.EnergyShifter(None)
+        shifter = torchani.EnergyShifter()
         dataset = list(torchani.data.load(dataset_path).subtract_self_energies(shifter).species_to_indices().shuffle())
         loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, collate_fn=torchani.data.collate_fn, num_workers=64)
         for i in loader:

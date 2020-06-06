@@ -38,7 +38,7 @@ ShfA = torch.tensor([9.0000000e-01, 1.5500000e+00, 2.2000000e+00, 2.8500000e+00]
 species_order = ['H', 'C', 'N', 'O']
 num_species = len(species_order)
 aev_computer = torchani.AEVComputer(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
-energy_shifter = torchani.utils.EnergyShifter(None)
+energy_shifter = torchani.utils.EnergyShifter()
 
 
 try:
