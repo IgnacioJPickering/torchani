@@ -51,6 +51,7 @@ class ANIModel(torch.nn.ModuleDict):
     def __init__(self, modules):
         super(ANIModel, self).__init__(self.ensureOrderedDict(modules))
 
+
     def forward(self, species_aev: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
@@ -117,6 +118,11 @@ class SpeciesConverter(torch.nn.Module):
         self.register_buffer('conv_tensor', torch.full((maxidx + 2,), -1, dtype=torch.long))
         for i, s in enumerate(species):
             self.conv_tensor[rev_idx[s]] = i
+
+    @classmethod
+    def from_neurochem_resource(cls, info_file_path):
+        const_file = get_from_info_file(info_file_path, InfoData.CONSTS)
+        return cls(neurochem.Constants(const_file).species)
 
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
