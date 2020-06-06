@@ -668,4 +668,4 @@ if sys.version_info[0] > 2:
                     self.tensorboard.add_scalar('time_vs_epoch', elapsed, AdamW_scheduler.last_epoch)
 
 
-__all__ = ['Constants', 'load_sae', 'load_model', 'load_model_ensemble', 'Trainer', 'load_self_energies']
+__all__ = ['Constants', 'load_sae', 'load_model', 'load_model_ensemble', 'Trainer', 'load_self_energies', '_load_atomic_network_modules']

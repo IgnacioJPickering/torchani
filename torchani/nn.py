@@ -53,6 +53,8 @@ class ANIModel(torch.nn.ModuleDict):
 
     @classmethod
     def from_neurochem_resource(cls, info_file_path, model_index):
+        from . import neurochem
+        from .neurochem import get_from_info_file, InfoData
         prefix = get_from_info_file(info_file_path, InfoData.PREFIX)
         species = get_from_info_file(info_file_path, InfoData.SPECIES)
         modules = neurochem._load_atomic_network_modules(species, prefix, dir_is_prefix=True, model_index=model_index)
@@ -86,10 +88,9 @@ class Ensemble(torch.nn.ModuleList):
 
     @classmethod
     def from_neurochem_resource(cls, info_file_path):
-        prefix = get_from_info_file(info_file_path, InfoData.PREFIX)
-        species = get_from_info_file(info_file_path, InfoData.SPECIES)
+        from .neurochem import get_from_info_file, InfoData
         ensemble_size = get_from_info_file(info_file_path, InfoData.SIZE)
-        module_list = [ANIModel.from_neurochem_resource(species, prefix, dir_is_prefix=True, model_index=j) for j in range(ensemble_size) ]
+        module_list = [ANIModel.from_neurochem_resource(info_file_path, model_index=j) for j in range(ensemble_size) ]
         return cls(module_list)
 
     def forward(self, species_input: Tuple[Tensor, Tensor],
@@ -135,8 +136,9 @@ class SpeciesConverter(torch.nn.Module):
 
     @classmethod
     def from_neurochem_resource(cls, info_file_path):
-        const_file = get_from_info_file(info_file_path, InfoData.CONSTS)
-        return cls(neurochem.Constants(const_file).species)
+        from .neurochem import get_from_info_file, InfoData
+        species = get_from_info_file(info_file_path, InfoData.SPECIES)
+        return cls(species)
 
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,

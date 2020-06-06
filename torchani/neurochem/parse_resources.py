@@ -29,7 +29,7 @@ def get_from_info_file(info_file_path, data_id):
             data = f.readlines()[data_id.value].strip()
 
     if data_id is InfoData.SIZE:
-        return data
+        return int(data)
 
     if data_id is InfoData.SPECIES:
         data = _resolve_resource_path(data)
