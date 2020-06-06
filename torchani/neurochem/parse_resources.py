@@ -24,7 +24,7 @@ def get_from_info_file(info_file_path, data_id):
     info_file = _resolve_resource_path(info_file_path)
     with open(info_file) as f:
         if data_id is InfoData.SPECIES:
-            data = f.readlines()[3].strip()
+            data = f.readlines()[0].strip()
         else:
             data = f.readlines()[data_id.value].strip()
 
@@ -32,6 +32,7 @@ def get_from_info_file(info_file_path, data_id):
         return data
 
     if data_id is InfoData.SPECIES:
+        data = _resolve_resource_path(data)
         return Constants(data).species
 
     return _resolve_resource_path(data)
