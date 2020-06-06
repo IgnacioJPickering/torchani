@@ -19,29 +19,31 @@ import ase
 
 
 ###############################################################################
-# Now let's read constants from constant file and construct AEV computer.
+# Now let's construct an AEV computer.
 try:
     path = os.path.dirname(os.path.realpath(__file__))
 except NameError:
     path = os.getcwd()
-const_file = os.path.join(path, '../torchani/resources/ani-1x_8x/rHCNO-5.2R_16-3.5A_a4-8.params')  # noqa: E501
-consts = torchani.neurochem.Constants(const_file)
-aev_computer = torchani.AEVComputer(**consts)
+
+# We can obtain the parameters for all the modules indirectly form an info file
+info_file = 'ani-1x_8x.info'
+aev_computer = torchani.AEVComputer.from_neurochem_resource(info_file)
 
 ###############################################################################
 # Now let's read self energies and construct energy shifter.
-sae_file = os.path.join(path, '../torchani/resources/ani-1x_8x/sae_linfit.dat')  # noqa: E501
-energy_shifter = torchani.neurochem.load_sae(sae_file)
+energy_shifter = torchani.EnergyShifter.from_neurochem_resource(info_file)
 
 ###############################################################################
 # Now let's read a whole ensemble of models.
-model_prefix = os.path.join(path, '../torchani/resources/ani-1x_8x/train')  # noqa: E501
-ensemble = torchani.neurochem.load_model_ensemble(consts.species, model_prefix, 8)  # noqa: E501
+ensemble = torchani.Ensemble.from_neurochem_resource(info_file)
 
 ###############################################################################
 # Or alternatively a single model.
-model_dir = os.path.join(path, '../torchani/resources/ani-1x_8x/train0/networks')  # noqa: E501
-model = torchani.neurochem.load_model(consts.species, model_dir)
+model = torchani.ANIModel.from_neurochem_resource(info_file)
+
+###############################################################################
+# We will also obtain an appropriate species-to-tensor converter
+species_to_tensor = torchani.utils.ChemicalSymbolsToInts.from_neurochem_resource(info_file)
 
 ###############################################################################
 # You can create the pipeline of computing energies:
@@ -55,8 +57,8 @@ print(nnp2)
 
 ###############################################################################
 # You can also create an ASE calculator using the ensemble or single model:
-calculator1 = torchani.ase.Calculator(consts.species, nnp1)
-calculator2 = torchani.ase.Calculator(consts.species, nnp2)
+calculator1 = torchani.ase.Calculator(species_to_tensor.species, nnp1)
+calculator2 = torchani.ase.Calculator(species_to_tensor.species, nnp2)
 print(calculator1)
 print(calculator1)
 
@@ -68,7 +70,7 @@ coordinates = torch.tensor([[[0.03192167, 0.00638559, 0.01301679],
                              [0.45554739, 0.54289633, 0.81170881],
                              [0.66091919, -0.16799635, -0.91037834]]],
                            requires_grad=True)
-species = consts.species_to_tensor(['C', 'H', 'H', 'H', 'H']).unsqueeze(0)
+species = species_to_tensor(['C', 'H', 'H', 'H', 'H']).unsqueeze(0)
 methane = ase.Atoms(['C', 'H', 'H', 'H', 'H'], positions=coordinates.squeeze().detach().numpy())
 
 ###############################################################################

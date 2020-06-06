@@ -238,6 +238,7 @@ class ChemicalSymbolsToInts:
 
     def __init__(self, all_species):
         self.rev_species = {s: i for i, s in enumerate(all_species)}
+        self.species = [s for s in all_species]
 
     @classmethod
     def from_neurochem_resource(cls, info_file_path):
