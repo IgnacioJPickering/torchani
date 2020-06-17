@@ -1,3 +1,4 @@
+nose
 tb-nightly
 tqdm
 ase

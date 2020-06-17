@@ -82,7 +82,12 @@ install dependencies:
 pip install sphinx sphinx-gallery pillow matplotlib sphinx_rtd_theme
 ```
 
-To manually run unit tests, do `python setup.py nosetests`
+To manually run unit tests, do `python setup.py nosetests`, but first install
+the dependencies:
+
+```bash
+pip install -r test_requirements.txt
+```
 
 If you opened a pull request, you could see your generated documents at https://aiqm.github.io/torchani-test-docs/ after you `docs` check succeed.
 Keep in mind that this repository is only for the purpose of convenience of development, and only keeps the latest push.
