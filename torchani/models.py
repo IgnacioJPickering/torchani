@@ -36,10 +36,16 @@ import zipfile
 import shutil
 import torch
 from torch import Tensor
-from typing import Tuple, Optional
+from typing import Tuple, Optional, NamedTuple
 from . import neurochem
 from .nn import SpeciesConverter, SpeciesEnergies
 from .aev import AEVComputer
+
+
+class SpeciesEnergiesRhos(NamedTuple):
+    species: Tensor
+    energies: Tensor
+    rhos: Tensor
 
 
 class BuiltinModel(torch.nn.Module):
@@ -266,6 +272,95 @@ class BuiltinEnsemble(BuiltinModel):
                            self._species_to_tensor, self.consts, self.sae_dict,
                            self.periodic_table_index)
         return ret
+
+    @torch.jit.export
+    def members_energies(self, species_coordinates: Tuple[Tensor, Tensor],
+                         cell: Optional[Tensor] = None,
+                         pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        """Calculates predicted energies of all member modules
+
+        ..warning::
+            Since this function does not call ``__call__`` directly,
+            hooks are not registered and profiling is not done correctly by
+            pytorch on it. It is meant as a convenience function for analysis
+             and active learning.
+
+        .. note:: The coordinates, and cell are in Angstrom, and the energies
+            will be in Hartree.
+
+        Args:
+            species_coordinates: minibatch of configurations
+            cell: the cell used in PBC computation, set to None if PBC is not enabled
+            pbc: the bool tensor indicating which direction PBC is enabled, set to None if PBC is not enabled
+
+        Returns:
+            species_energies: species and energies for the given configurations
+                note that the shape of species is (C, A), where C is
+                the number of configurations and A the number of atoms, and
+                the shape of energies is (M, C), where M is the number
+                of modules in the ensemble
+
+        """
+        if self.periodic_table_index:
+            species_coordinates = self.species_converter(species_coordinates)
+        species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
+        member_outputs = []
+        for nnp in self.neural_networks:
+            unshifted_energies = nnp((species, aevs)).energies
+            shifted_energies = self.energy_shifter(SpeciesEnergies(species, unshifted_energies)).energies
+            member_outputs.append(shifted_energies.unsqueeze(0))
+        return SpeciesEnergies(species, torch.cat(member_outputs, dim=0))
+
+    @torch.jit.export
+    def energies_rhos(self, species_coordinates: Tuple[Tensor, Tensor],
+                      cell: Optional[Tensor] = None,
+                      pbc: Optional[Tensor] = None, unbiased: bool = False) -> SpeciesEnergiesRhos:
+        """Calculates predicted predicted energies and rho factors
+
+        Rho factors are used for query-by-committee (QBC) based active learning
+        (as described in the ANI-1x paper `less-is-more`_ ).
+
+        .. _less-is-more:
+            https://aip.scitation.org/doi/10.1063/1.5023802
+
+        ..warning::
+            Since this function does not call ``__call__`` directly,
+            hooks are not registered and profiling is not done correctly by
+            pytorch on it. It is meant as a convenience function for analysis
+             and active learning.
+
+        .. note:: The coordinates, and cell are in Angstrom, and the energies
+            and rhos will be in Hartree.
+
+        Args:
+            species_coordinates: minibatch of configurations
+            cell: the cell used in PBC computation, set to None if PBC is not
+                enabled
+            pbc: the bool tensor indicating which direction PBC is enabled, set
+                to None if PBC is not enabled
+            unbiased: if `True` then Bessel's correction is applied to the
+                standard deviation over the ensemble member's. If `False` Bessel's
+                correction is not applied.
+
+        Returns:
+            species_energies_rhos: species, energies and rho factors for the
+                given configurations note that the shape of species is (C, A),
+                where C is the number of configurations and A the number of
+                atoms, the shape of energies is (C,) and the shape of rhos is
+                also (C,).
+
+        """
+        species, energies = self.members_energies(species_coordinates, cell, pbc)
+
+        # standard deviation is taken across ensemble members
+        rhos = energies.clone().std(0, unbiased=unbiased)
+
+        # rho's are weighted by dividing by the square root of the number of
+        # atoms in each molecule
+        num_atoms = (species >= 0).sum(dim=1, dtype=energies.dtype)
+        rhos = rhos / num_atoms.sqrt()
+        energies = energies.mean(dim=0)
+        return SpeciesEnergiesRhos(species, energies, rhos)
 
     def __len__(self):
         """Get the number of networks in the ensemble
