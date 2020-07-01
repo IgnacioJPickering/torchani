@@ -3,8 +3,8 @@ import torchani
 import unittest
 
 class ForcesModel(torch.nn.Module):
-    # TODO: check if ONNX has a builtin autograd
-    # TODO: check if this has any chance of working
+    # TODO: check if TensorRT has a builtin autograd
+    # TODO: check if this has any chance of working or is just fantasy
     # if ONNX doesn't have a builtin autograd something like this may be
     # necessary in order to calculate forces, this is a model that internally
     # performs autograd inside forward, although I suspect this will not work
