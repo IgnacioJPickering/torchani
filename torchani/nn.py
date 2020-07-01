@@ -66,7 +66,8 @@ class ANIModel(torch.nn.ModuleDict):
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
                 output.masked_scatter_(mask, m(input_).flatten())
-        output = output.view_as(species)
+        # onnx does not support view_as()
+        output = output.view(species.size())
         return SpeciesEnergies(species, torch.sum(output, dim=1))
 
 
