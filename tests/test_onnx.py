@@ -63,7 +63,7 @@ class TestONNX(unittest.TestCase):
         ani_model = ani1x.neural_networks
         species, aevs = ani1x.aev_computer((self.species, self.coordinates))
         torch.onnx.export(ani_model, ((species, aevs), ),
-                          'test.onnx',
+                          'ani_model.onnx',
                           operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK, 
                           verbose=True,
                           opset_version=11)
@@ -79,7 +79,7 @@ class TestONNX(unittest.TestCase):
                                                        (self.species,
                                                         self.coordinates))
         torch.onnx.export(energy_shifter, ((species, energies), ),
-                          'test.onnx',
+                          'energy_shifter.onnx',
                           operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK, 
                           verbose=True,
                           opset_version=11)
@@ -91,7 +91,7 @@ class TestONNX(unittest.TestCase):
                                       model_index=0).to(self.device)
         aev_computer = ani1x.aev_computer
         torch.onnx.export(aev_computer, ((self.species, self.coordinates), ),
-                          'test.onnx',
+                          'aev_computer.onnx',
                           verbose=True,
                           opset_version=11, 
                           operator_export_type=torch.onnx.OperatorExportTypes.
