@@ -1,6 +1,8 @@
 import torch
 import torchani
 import unittest
+# current unsupported aten operators:
+
 
 class ForcesModel(torch.nn.Module):
     # TODO: check if TensorRT has a builtin autograd
@@ -18,6 +20,7 @@ class ForcesModel(torch.nn.Module):
         energies = energies.sum()
         forces = -torch.autograd.grad(energies, coordinates)[0]
         return forces
+
 
 class TestONNX(unittest.TestCase):
     # tracing tests are currently performed falling back on aten operators for
@@ -39,7 +42,7 @@ class TestONNX(unittest.TestCase):
               [0., 0., 0.]]],
             requires_grad=True,
             device=self.device)
-        self.species = torch.tensor([[1, 2, 3, 0, 0],[1, 2, 3, 0, 0]],
+        self.species = torch.tensor([[1, 2, 3, 0, 0], [1, 2, 3, 0, 0]],
                                     dtype=torch.long,
                                     device=self.device)
 
@@ -49,11 +52,9 @@ class TestONNX(unittest.TestCase):
         torch.onnx.export(forces_model, ((self.species, self.coordinates), ),
                           'forces_model.onnx',
                           verbose=True,
-                          opset_version=11, 
+                          opset_version=11,
                           operator_export_type=torch.onnx.OperatorExportTypes.
                           ONNX_ATEN_FALLBACK)
-
-
 
     def testANIModelTrace(self):
         # checks if ANIModel is onnx-traceable
@@ -64,7 +65,7 @@ class TestONNX(unittest.TestCase):
         species, aevs = ani1x.aev_computer((self.species, self.coordinates))
         torch.onnx.export(ani_model, ((species, aevs), ),
                           'ani_model.onnx',
-                          operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK, 
+                          operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK,
                           verbose=True,
                           opset_version=11)
 
@@ -80,12 +81,12 @@ class TestONNX(unittest.TestCase):
                                                         self.coordinates))
         torch.onnx.export(energy_shifter, ((species, energies), ),
                           'energy_shifter.onnx',
-                          operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK, 
+                          operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK,
                           verbose=True,
                           opset_version=11)
 
     def testAEVComputerTrace(self):
-       # checks if AEVComputer() is onnx-traceable
+        # checks if AEVComputer() is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
         ani1x = torchani.models.ANI1x(periodic_table_index=True,
                                       model_index=0).to(self.device)
@@ -93,7 +94,7 @@ class TestONNX(unittest.TestCase):
         torch.onnx.export(aev_computer, ((self.species, self.coordinates), ),
                           'aev_computer.onnx',
                           verbose=True,
-                          opset_version=11, 
+                          opset_version=11,
                           operator_export_type=torch.onnx.OperatorExportTypes.
                           ONNX_ATEN_FALLBACK)
 
