@@ -5,9 +5,6 @@ from torch import Tensor
 # opset 11 only
 
 
-def opset11_triu_indices():
-    # triu indices using a fixed offset of 1
-    pass
 
 
 def opset11_index_add():
@@ -24,11 +21,9 @@ def opset11_any(x: Tensor) -> Tensor:
     return x
 
 
-def opset11_repeat_interleave(times_to_repeat: Tensor) -> Tensor:
+def opset11_repeat_interleave(times_to_repeat: Tensor, sequence: bool = False) -> Tensor:
     # only single argument overload is needed for AEVComputer
-    assert len(
-        times_to_repeat.shape
-    ) == 1, 'repeat_interleave_single_argument only accepts 1D tensors'
+    assert len(times_to_repeat.shape) == 1, 'repeat_interleave_single_argument only accepts 1D tensors'
 
     max_times_to_repeat = times_to_repeat.max()
     numbers_to_repeat = torch.arange(len(times_to_repeat),
@@ -37,17 +32,39 @@ def opset11_repeat_interleave(times_to_repeat: Tensor) -> Tensor:
     # First repeat numbers_to_repeat by replicating each number to the maximum
     # value later select the ones wanted according to a mask
     numbers_to_repeat = numbers_to_repeat.repeat(max_times_to_repeat,
-                                                 1).t().flatten()
+                                                 1)
+    if not sequence:  
+        # this is a convenience overload to be able to calculate triu_indices
+        numbers_to_repeat = numbers_to_repeat.t()
+
+    numbers_to_repeat = numbers_to_repeat.flatten()
 
     # Now build a mask to select only the number of repetitions necessary for
     # each row
-    repeats_until_maximum = torch.arange(max_times_to_repeat,
+    if sequence:
+        # this is a convenience overload to be able to calculate triu_indices
+        repeats_until_maximum = torch.arange(max_times_to_repeat,0, -1, 
                                          device=times_to_repeat.device,
                                          dtype=torch.long)
-    mask = (repeats_until_maximum < times_to_repeat.view(-1, 1))
+        mask = (repeats_until_maximum <= times_to_repeat.view(-1, 1))
+    else:
+        repeats_until_maximum = torch.arange(max_times_to_repeat,
+                                             device=times_to_repeat.device,
+                                             dtype=torch.long)
+        mask = (repeats_until_maximum < times_to_repeat.view(-1, 1))
 
     repeated_tensor = numbers_to_repeat.masked_select(mask.flatten())
     return repeated_tensor
+
+
+def opset11_triu_indices(size):
+    # triu indices using a fixed offset of 1, and with a fixed 
+    # row / cols of size x size
+    times_to_repeat_upper = torch.arange(size - 1, 0, -1 )
+    upper = opset11_repeat_interleave(times_to_repeat_upper)
+    lower = opset11_repeat_interleave(times_to_repeat_upper, sequence=True) + 1
+    indices = torch.cat((upper.unsqueeze(0), lower.unsqueeze(0)), dim=0)
+    return indices
 
 
 class Opset11CELU(torch.nn.Module):
@@ -62,3 +79,4 @@ class Opset11CELU(torch.nn.Module):
 
     def extra_repr(self) -> str:
         return 'alpha={}'.format(self.alpha)
+
