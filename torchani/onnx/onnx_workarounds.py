@@ -4,22 +4,22 @@ Tensor = torch.Tensor
 # reproduce the needed behavior of aten operations by using operations in
 # opset 11 only
 
-def triu_indices_offset_1():
+def opset11_triu_indices():
     # triu indices using a fixed offset of 1
     pass
 
-def torch_any(x : Tensor) -> Tensor:
+def opset11_index_add():
+    pass
+
+def opset11_unique_consecutive():
+    pass
+
+def opset11_any(x : Tensor) -> Tensor:
     x = x.flatten() # it is not necessary to know about dimensions for this
     x = (torch.sum(x) > 0)
     return x
 
-def index_add():
-    pass
-
-def unique_consecutive():
-    pass
-
-def repeat_interleave_single_argument(times_to_repeat: Tensor) -> Tensor:
+def opset11_repeat_interleave(times_to_repeat: Tensor) -> Tensor:
     # only single argument overload is needed for AEVComputer
     assert len(times_to_repeat.shape) == 1, 'repeat_interleave_single_argument only accepts 1D tensors'
 
