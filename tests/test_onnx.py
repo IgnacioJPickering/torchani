@@ -82,26 +82,25 @@ class TestONNX(unittest.TestCase):
                           operator_export_type=torch.onnx.OperatorExportTypes.
                           ONNX_ATEN_FALLBACK)
 
-    @unittest.skipIf(True, 'skip')
     def testANIModelTrace(self):
         # checks if ANIModel is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
         ani1x = self.model
-        ani_model = ani1x.neural_networks
+        ani_model = ModelWrapper(ani1x.neural_networks)
         species, aevs = ani1x.aev_computer((self.species, self.coordinates))
-        example_outputs = ani_model((species, aevs))
-        torch.onnx.export(ani_model, ((species, aevs), ),
+        example_outputs = ani_model(species, aevs)
+        torch.onnx.export(ani_model, (species, aevs, ),
                           f'{self.prefix_for_onnx_files}ani_model.onnx',
                           example_outputs=example_outputs,
-                          verbose=True,
+                          #verbose=True,
                           opset_version=11)
 
-    # @unittest.skipIf(True, 'skip')
     def testEnergyShifterTrace(self):
         # checks if EnergyShifter is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
         ani1x = self.model
         energy_shifter = ModelWrapper(ani1x.energy_shifter)
+
         species, energies = torchani.nn.Sequential(ani1x.aev_computer,
                                                    ani1x.neural_networks)(
                                                        (self.species,
@@ -109,7 +108,7 @@ class TestONNX(unittest.TestCase):
         example_outputs = energy_shifter(species, energies)
         torch.onnx.export(energy_shifter, (species, energies),
                           f'{self.prefix_for_onnx_files}energy_shifter.onnx',
-                          verbose=True,
+                          #verbose=True,
                           example_outputs=example_outputs,
                           opset_version=11)
 
@@ -140,17 +139,33 @@ class TestScriptModuleONNX(TestONNX):
         # checks if EnergyShifter is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
         energy_shifter = ModelWrapper(self.model.energy_shifter)
+        energy_shifter = torch.jit.script(energy_shifter)
+
         species, energies = torchani.nn.Sequential(self.model.aev_computer,
                                                    self.model.neural_networks)(
                                                        (self.species,
                                                         self.coordinates))
 
-        energy_shifter = torch.jit.script(energy_shifter)
         example_outputs = energy_shifter(species, energies)
         torch.onnx.export(energy_shifter, (species, energies),
                           f'{self.prefix_for_onnx_files}energy_shifter.onnx',
-                          verbose=True,
+                          #verbose=True,
                           example_outputs=example_outputs,
+                          opset_version=11)
+
+    def testANIModelTrace(self):
+        # checks if ANIModel is onnx-traceable
+        # currently only checks gross RuntimeErrors when tracing
+        ani1x = self.model
+        ani_model = ModelWrapper(ani1x.neural_networks)
+        ani_model = torch.jit.script(ani_model)
+
+        species, aevs = ani1x.aev_computer((self.species, self.coordinates))
+        example_outputs = ani_model(species, aevs)
+        torch.onnx.export(ani_model, (species, aevs, ),
+                          f'{self.prefix_for_onnx_files}ani_model.onnx',
+                          example_outputs=example_outputs,
+                          #verbose=True,
                           opset_version=11)
 
 
