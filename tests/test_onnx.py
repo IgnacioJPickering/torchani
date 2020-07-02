@@ -5,9 +5,9 @@ import unittest
 #  current unsupported aten operators in opset 12 (ONNX 1.7.0):
 # -torch.Tensor.index_add
 # -torch.Tensor.unique_consecutive
+# -torch.BoolTensor.any needs to be added for arbitrary dimensions
 
 # -torch.triu_indices done
-# -torch.BoolTensor.any done
 # -torch.repeat_interleave done
 # -For opset 11, which is ONNX 1.6.0, also:
 # -torch.nn.functional.celu done
