@@ -153,7 +153,7 @@ class EnergyShifter(torch.nn.Module):
     def __init__(self, self_energies, fit_intercept=False):
         super(EnergyShifter, self).__init__()
 
-        self.fit_intercept = fit_intercept
+        self.fit_intercept = torch.tensor(fit_intercept, dtype=torch.bool)
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.double)
 
@@ -172,7 +172,7 @@ class EnergyShifter(torch.nn.Module):
             :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
             for molecular self energies.
         """
-        intercept = 0.0
+        intercept = torch.tensor(0.0, dtype=torch.double)
         if self.fit_intercept:
             intercept = self.self_energies[-1]
 
