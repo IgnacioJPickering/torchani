@@ -12,14 +12,13 @@ import unittest
 # -For opset 11, which is ONNX 1.6.0, also:
 # -torch.nn.functional.celu done
 
+
 class ModelWrapper(torch.nn.Module):
-    
     def __init__(self, model):
         super().__init__()
         self.model = model
 
-
-    def forward(self, species : Tensor, input_: Tensor):
+    def forward(self, species: Tensor, input_: Tensor):
         return self.model((species, input_))
 
 
@@ -89,11 +88,15 @@ class TestONNX(unittest.TestCase):
         ani_model = ModelWrapper(ani1x.neural_networks)
         species, aevs = ani1x.aev_computer((self.species, self.coordinates))
         example_outputs = ani_model(species, aevs)
-        torch.onnx.export(ani_model, (species, aevs, ),
-                          f'{self.prefix_for_onnx_files}ani_model.onnx',
-                          example_outputs=example_outputs,
-                          #verbose=True,
-                          opset_version=11)
+        torch.onnx.export(
+            ani_model,
+            (
+                species,
+                aevs,
+            ),
+            f'{self.prefix_for_onnx_files}ani_model.onnx',
+            example_outputs=example_outputs,
+            opset_version=11)
 
     def testEnergyShifterTrace(self):
         # checks if EnergyShifter is onnx-traceable
@@ -106,11 +109,12 @@ class TestONNX(unittest.TestCase):
                                                        (self.species,
                                                         self.coordinates))
         example_outputs = energy_shifter(species, energies)
-        torch.onnx.export(energy_shifter, (species, energies),
-                          f'{self.prefix_for_onnx_files}energy_shifter.onnx',
-                          #verbose=True,
-                          example_outputs=example_outputs,
-                          opset_version=11)
+        torch.onnx.export(
+            energy_shifter,
+            (species, energies),
+            f'{self.prefix_for_onnx_files}energy_shifter.onnx',
+            example_outputs=example_outputs,
+            opset_version=11)
 
     @unittest.skipIf(True, 'skip')
     def testAEVComputerTrace(self):
@@ -132,7 +136,6 @@ class TestScriptModuleONNX(TestONNX):
     # Tests ScriptModule exports instead of plain traces
     def setUp(self):
         super().setUp()
-        #self.model = torch.jit.script(self.model)
         self.prefix_for_onnx_files = 'jit_'
 
     def testEnergyShifterTrace(self):
@@ -147,11 +150,12 @@ class TestScriptModuleONNX(TestONNX):
                                                         self.coordinates))
 
         example_outputs = energy_shifter(species, energies)
-        torch.onnx.export(energy_shifter, (species, energies),
-                          f'{self.prefix_for_onnx_files}energy_shifter.onnx',
-                          #verbose=True,
-                          example_outputs=example_outputs,
-                          opset_version=11)
+        torch.onnx.export(
+            energy_shifter,
+            (species, energies),
+            f'{self.prefix_for_onnx_files}energy_shifter.onnx',
+            example_outputs=example_outputs,
+            opset_version=11)
 
     def testANIModelTrace(self):
         # checks if ANIModel is onnx-traceable
@@ -162,11 +166,15 @@ class TestScriptModuleONNX(TestONNX):
 
         species, aevs = ani1x.aev_computer((self.species, self.coordinates))
         example_outputs = ani_model(species, aevs)
-        torch.onnx.export(ani_model, (species, aevs, ),
-                          f'{self.prefix_for_onnx_files}ani_model.onnx',
-                          example_outputs=example_outputs,
-                          #verbose=True,
-                          opset_version=11)
+        torch.onnx.export(
+            ani_model,
+            (
+                species,
+                aevs,
+            ),
+            f'{self.prefix_for_onnx_files}ani_model.onnx',
+            example_outputs=example_outputs,
+            opset_version=11)
 
 
 if __name__ == '__main__':
