@@ -158,6 +158,8 @@ class EnergyShifter(torch.nn.Module):
             self_energies = torch.tensor(self_energies, dtype=torch.double)
 
         self.register_buffer('self_energies', self_energies)
+        self.register_buffer('mask_index', torch.tensor(-1, dtype=torch.long))
+        self.register_buffer('mask_self_energy', torch.tensor(0.0, dtype=torch.double) )
 
     def sae(self, species):
         """Compute self energies for molecules.
@@ -177,7 +179,7 @@ class EnergyShifter(torch.nn.Module):
             intercept = self.self_energies[-1]
 
         self_energies = self.self_energies[species]
-        self_energies[species == torch.tensor(-1, device=species.device)] = torch.tensor(0, device=species.device, dtype=torch.double)
+        self_energies[species == self.mask_index] = self.mask_self_energy
         return self_energies.sum(dim=1) + intercept
 
     def forward(self, species_energies: Tuple[Tensor, Tensor],

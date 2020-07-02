@@ -1,4 +1,5 @@
 import torch
+from torch import Tensor
 import torchani
 import unittest
 #  current unsupported aten operators in opset 12 (ONNX 1.7.0):
@@ -10,6 +11,16 @@ import unittest
 # -torch.repeat_interleave done
 # -For opset 11, which is ONNX 1.6.0, also:
 # -torch.nn.functional.celu done
+
+class ModelWrapper(torch.nn.Module):
+    
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+
+    def forward(self, species : Tensor, input_: Tensor):
+        return self.model((species, input_))
 
 
 class ForcesModel(torch.nn.Module):
@@ -90,13 +101,13 @@ class TestONNX(unittest.TestCase):
         # checks if EnergyShifter is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
         ani1x = self.model
-        energy_shifter = ani1x.energy_shifter
+        energy_shifter = ModelWrapper(ani1x.energy_shifter)
         species, energies = torchani.nn.Sequential(ani1x.aev_computer,
                                                    ani1x.neural_networks)(
                                                        (self.species,
                                                         self.coordinates))
-        example_outputs = energy_shifter((species, energies))
-        torch.onnx.export(energy_shifter, ((species, energies), ),
+        example_outputs = energy_shifter(species, energies)
+        torch.onnx.export(energy_shifter, (species, energies),
                           f'{self.prefix_for_onnx_files}energy_shifter.onnx',
                           verbose=True,
                           example_outputs=example_outputs,
@@ -122,8 +133,25 @@ class TestScriptModuleONNX(TestONNX):
     # Tests ScriptModule exports instead of plain traces
     def setUp(self):
         super().setUp()
-        self.model = torch.jit.script(self.model)
+        #self.model = torch.jit.script(self.model)
         self.prefix_for_onnx_files = 'jit_'
+
+    def testEnergyShifterTrace(self):
+        # checks if EnergyShifter is onnx-traceable
+        # currently only checks gross RuntimeErrors when tracing
+        energy_shifter = ModelWrapper(self.model.energy_shifter)
+        species, energies = torchani.nn.Sequential(self.model.aev_computer,
+                                                   self.model.neural_networks)(
+                                                       (self.species,
+                                                        self.coordinates))
+
+        energy_shifter = torch.jit.script(energy_shifter)
+        example_outputs = energy_shifter(species, energies)
+        torch.onnx.export(energy_shifter, (species, energies),
+                          f'{self.prefix_for_onnx_files}energy_shifter.onnx',
+                          verbose=True,
+                          example_outputs=example_outputs,
+                          opset_version=11)
 
 
 if __name__ == '__main__':
