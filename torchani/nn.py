@@ -58,7 +58,13 @@ class ANIModel(torch.nn.ModuleDict):
         species_ = species.flatten()
         aev = aev.flatten(0, 1)
 
-        output = aev.new_zeros(species_.shape)
+        #output = aev.new_zeros(species_.shape)
+        # this hardcodes the device of the tensor which is non ideal but it is
+        # necessary for ONNX support, since ONNX does not support
+        # "other.device"
+        # also float is hardcoded which is not ideal
+        output = torch.zeros(species_.shape, dtype=torch.float,
+                device=torch.device('cuda'))
 
         for i, (_, m) in enumerate(self.items()):
             mask = (species_ == i)
