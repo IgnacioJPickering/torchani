@@ -67,12 +67,12 @@ class TestONNX(unittest.TestCase):
         # checks if ANIModel is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
         ani1x = torchani.models.ANI1x(periodic_table_index=True,
-                                      model_index=0).to(self.device)
+                                      model_index=0, onnx_opset11=True).to(self.device)
         ani_model = ani1x.neural_networks
+        print(ani_model)
         species, aevs = ani1x.aev_computer((self.species, self.coordinates))
         torch.onnx.export(ani_model, ((species, aevs), ),
                           'ani_model.onnx',
-                          operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK,
                           verbose=True,
                           opset_version=11)
 
@@ -88,7 +88,6 @@ class TestONNX(unittest.TestCase):
                                                         self.coordinates))
         torch.onnx.export(energy_shifter, ((species, energies), ),
                           'energy_shifter.onnx',
-                          operator_export_type=torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK,
                           verbose=True,
                           opset_version=11)
 

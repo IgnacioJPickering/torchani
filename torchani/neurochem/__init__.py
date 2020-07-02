@@ -14,6 +14,7 @@ import sys
 from ..nn import ANIModel, Ensemble, Gaussian, Sequential
 from ..utils import EnergyShifter, ChemicalSymbolsToInts
 from ..aev import AEVComputer
+from ..onnx import Opset11CELU
 from torch.optim import AdamW
 from collections import OrderedDict
 from torchani.units import hartree2kcalmol
@@ -89,7 +90,7 @@ def load_sae(filename, return_dict=False):
     return EnergyShifter(self_energies)
 
 
-def _get_activation(activation_index):
+def _get_activation(activation_index, onnx_opset11=False):
     # Activation defined in:
     # https://github.com/Jussmith01/NeuroChem/blob/stable1/src-atomicnnplib/cunetwork/cuannlayer_t.cu#L920
     if activation_index == 6:
@@ -97,13 +98,15 @@ def _get_activation(activation_index):
     elif activation_index == 5:  # Gaussian
         return Gaussian()
     elif activation_index == 9:  # CELU
+        if onnx_opset11:
+            return Opset11CELU(alpha=0.1)
         return torch.nn.CELU(alpha=0.1)
     else:
         raise NotImplementedError(
             'Unexpected activation {}'.format(activation_index))
 
 
-def load_atomic_network(filename):
+def load_atomic_network(filename, onnx_opset11=False):
     """Returns an instance of :class:`torch.nn.Sequential` with hyperparameters
     and parameters loaded NeuroChem's .nnf, .wparam and .bparam files."""
 
@@ -231,14 +234,14 @@ def load_atomic_network(filename):
             bfn = os.path.join(networ_dir, bfn)
             load_param_file(layer, in_size, out_size, wfn, bfn)
             layers.append(layer)
-            activation = _get_activation(s['activation'])
+            activation = _get_activation(s['activation'], onnx_opset11)
             if activation is not None:
                 layers.append(activation)
 
         return torch.nn.Sequential(*layers)
 
 
-def load_model(species, dir_):
+def load_model(species, dir_, onnx_opset11=False):
     """Returns an instance of :class:`torchani.ANIModel` loaded from
     NeuroChem's network directory.
 
@@ -250,11 +253,11 @@ def load_model(species, dir_):
     models = OrderedDict()
     for i in species:
         filename = os.path.join(dir_, 'ANN-{}.nnf'.format(i))
-        models[i] = load_atomic_network(filename)
+        models[i] = load_atomic_network(filename, onnx_opset11)
     return ANIModel(models)
 
 
-def load_model_ensemble(species, prefix, count):
+def load_model_ensemble(species, prefix, count, onnx_opset11=False):
     """Returns an instance of :class:`torchani.Ensemble` loaded from
     NeuroChem's network directories beginning with the given prefix.
 
@@ -268,7 +271,7 @@ def load_model_ensemble(species, prefix, count):
     models = []
     for i in range(count):
         network_dir = os.path.join('{}{}'.format(prefix, i), 'networks')
-        models.append(load_model(species, network_dir))
+        models.append(load_model(species, network_dir, onnx_opset11))
     return Ensemble(models)
 
 

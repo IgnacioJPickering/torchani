@@ -38,9 +38,14 @@ def opset11_repeat_interleave(times_to_repeat: Tensor) -> Tensor:
     return repeated_tensor
 
 class Opset11CELU(torch.nn.Module):
+     __constants__ = ['alpha']
 
      def __init__(self, alpha: float = 1.0):
+         super(Opset11CELU, self).__init__()
          self.alpha = alpha
 
      def forward(self, x: Tensor) -> Tensor:
          return torch.nn.functional.elu(x / self.alpha, self.alpha)
+
+     def extra_repr(self) -> str:
+         return 'alpha={}'.format(self.alpha)

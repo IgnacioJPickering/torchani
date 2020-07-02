@@ -60,7 +60,7 @@ class BuiltinModel(torch.nn.Module):
         self.sae_dict = sae_dict
 
     @classmethod
-    def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False, model_index=0):
+    def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False, model_index=0, onnx_opset11=False):
         # this is used to load only 1 model (by default model 0)
         consts, sae_file, ensemble_prefix, ensemble_size = cls._parse_neurochem_resources(info_file_path)
         if (model_index >= ensemble_size):
@@ -72,7 +72,7 @@ class BuiltinModel(torch.nn.Module):
         species_to_tensor = consts.species_to_tensor
 
         network_dir = os.path.join('{}{}'.format(ensemble_prefix, model_index), 'networks')
-        neural_networks = neurochem.load_model(consts.species, network_dir)
+        neural_networks = neurochem.load_model(consts.species, network_dir, onnx_opset11)
 
         return cls(species_converter, aev_computer, neural_networks,
                    energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index)
@@ -230,7 +230,7 @@ class BuiltinEnsemble(BuiltinModel):
                                               periodic_table_index)
 
     @classmethod
-    def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False):
+    def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False, onnx_opset11=False):
         # this is used to load only 1 model (by default model 0)
         consts, sae_file, ensemble_prefix, ensemble_size = cls._parse_neurochem_resources(info_file_path)
 
@@ -239,7 +239,7 @@ class BuiltinEnsemble(BuiltinModel):
         energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
         species_to_tensor = consts.species_to_tensor
         neural_networks = neurochem.load_model_ensemble(consts.species,
-                                                        ensemble_prefix, ensemble_size)
+                                                        ensemble_prefix, ensemble_size, onnx_opset11)
 
         return cls(species_converter, aev_computer, neural_networks,
                    energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index)
@@ -276,7 +276,7 @@ class BuiltinEnsemble(BuiltinModel):
         return len(self.neural_networks)
 
 
-def ANI1x(periodic_table_index=False, model_index=None):
+def ANI1x(periodic_table_index=False, model_index=None, onnx_opset11=False):
     """The ANI-1x model as in `ani-1x_8x on GitHub`_ and `Active Learning Paper`_.
 
     The ANI-1x model is an ensemble of 8 networks that was trained using
@@ -292,8 +292,8 @@ def ANI1x(periodic_table_index=False, model_index=None):
     """
     info_file = 'ani-1x_8x.info'
     if model_index is None:
-        return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index)
-    return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index)
+        return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index, onnx_opset11)
+    return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index, onnx_opset11)
 
 
 def ANI1ccx(periodic_table_index=False, model_index=None):
