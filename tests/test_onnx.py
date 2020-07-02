@@ -1,14 +1,14 @@
 import torch
 import torchani
 import unittest
-# current unsupported aten operators:
-#-torch.triu_indices
-#-torch.BoolTensor.any
-#-torch.Tensor.index_add
-#-torch.Tensor.unique_consecutive
-#-torch.repeat_interleave
-#-For opset 11, which is ONNX 1.6.0, also:
-#-torch.nn.functional.celu
+#  current unsupported aten operators:
+# -torch.triu_indices
+# -torch.BoolTensor.any
+# -torch.Tensor.index_add
+# -torch.Tensor.unique_consecutive
+# -torch.repeat_interleave
+# -For opset 11, which is ONNX 1.6.0, also:
+# -torch.nn.functional.celu
 
 
 class ForcesModel(torch.nn.Module):
