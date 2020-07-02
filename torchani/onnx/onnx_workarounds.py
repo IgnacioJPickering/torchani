@@ -1,5 +1,5 @@
 import torch
-Tensor = torch.Tensor
+from torch import Tensor
 # workarounds for operations unsupported in onnx opset 11.  these functions
 # reproduce the needed behavior of aten operations by using operations in
 # opset 11 only
