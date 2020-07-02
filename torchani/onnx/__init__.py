@@ -1,1 +1,1 @@
-from .onnx_workarounds import *
+from .onnx_workarounds import *  # noqa

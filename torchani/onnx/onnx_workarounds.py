@@ -11,9 +11,9 @@ def opset11_index_add():
 
 def opset11_unique_consecutive():
     # unique consecutive and unique are very similar, with unique being
-    # slower since it deletes non consecutive repetititons, and has to 
-    # sort in order to do that. Since in AEVComputer stuff is already 
-    # sorted when unique_consecutive is called, we can call unique 
+    # slower since it deletes non consecutive repetititons, and has to
+    # sort in order to do that. Since in AEVComputer stuff is already
+    # sorted when unique_consecutive is called, we can call unique
     # with some extra overhead without issue
     pass
 
@@ -22,7 +22,6 @@ def opset11_any(x: Tensor) -> Tensor:
     x = x.flatten()  # it is not necessary to know about dimensions for this
     x = (torch.sum(x) > 0)
     return x
-
 
 
 def opset11_repeat_interleave(times_to_repeat: Tensor,
