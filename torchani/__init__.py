@@ -37,6 +37,7 @@ from . import neurochem
 from . import models
 from . import units
 from pkg_resources import get_distribution, DistributionNotFound
+from .onnx import *
 
 try:
     __version__ = get_distribution(__name__).version

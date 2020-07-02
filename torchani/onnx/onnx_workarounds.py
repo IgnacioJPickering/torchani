@@ -8,7 +8,7 @@ def triu_indices_offset_1():
     # triu indices using a fixed offset of 1
     pass
 
-def torch_any(x : Tensor):
+def torch_any(x : Tensor) -> Tensor:
     x = x.flatten() # it is not necessary to know about dimensions for this
     x = (torch.sum(x) > 0)
     return x
@@ -16,10 +16,13 @@ def torch_any(x : Tensor):
 def index_add():
     pass
 
-def repeat_interleave_single_argument(times_to_repeat: Tensor):
+def unique_consecutive():
+    pass
+
+def repeat_interleave_single_argument(times_to_repeat: Tensor) -> Tensor:
     # only single argument overload is needed for AEVComputer
     assert len(times_to_repeat.shape) == 1, 'repeat_interleave_single_argument only accepts 1D tensors'
-    
+
     max_times_to_repeat = times_to_repeat.max()
     numbers_to_repeat = torch.arange(len(times_to_repeat), device=times_to_repeat.device, dtype=torch.long)
     # First repeat numbers_to_repeat by replicating each number to the maximum
@@ -34,8 +37,10 @@ def repeat_interleave_single_argument(times_to_repeat: Tensor):
     repeated_tensor = numbers_to_repeat.masked_select(mask.flatten())
     return repeated_tensor
 
-def unique_consecutive():
-    pass
+class Opset11CELU(torch.nn.Module):
 
-def celu():
-    pass
+     def __init__(self, alpha: float = 1.0):
+         self.alpha = alpha
+
+     def forward(self, x: Tensor) -> Tensor:
+         return torch.nn.functional.elu(x / self.alpha, self.alpha)
