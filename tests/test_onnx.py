@@ -2,10 +2,11 @@ import torch
 import torchani
 import unittest
 #  current unsupported aten operators in opset 12 (ONNX 1.7.0):
-# -torch.triu_indices
-# -torch.BoolTensor.any
 # -torch.Tensor.index_add
-# -torch.Tensor.unique_consecutive
+# -torch.Tensor.unique_consecutive 
+
+# -torch.triu_indices done
+# -torch.BoolTensor.any done
 # -torch.repeat_interleave done
 # -For opset 11, which is ONNX 1.6.0, also:
 # -torch.nn.functional.celu done
@@ -53,6 +54,7 @@ class TestONNX(unittest.TestCase):
                                     dtype=torch.long,
                                     device=self.device)
         self.model = torchani.models.ANI1x(periodic_table_index=False, model_index=0, onnx_opset11=True).to(self.device)
+        self.prefix_for_onnx_files = ''
 
     @unittest.skipIf(True, 'always')
     def testForcesTrace(self):
@@ -60,7 +62,7 @@ class TestONNX(unittest.TestCase):
         example_outputs = forces_model((self.species, self.coordiantes))
 
         torch.onnx.export(forces_model, ((self.species, self.coordinates), ),
-                          'forces_model.onnx',
+                      f'{self.prefix_for_onnx_files}forces_model.onnx',
                           verbose=True,
                           opset_version=11,
                           example_outputs = example_outputs, 
@@ -76,7 +78,7 @@ class TestONNX(unittest.TestCase):
         species, aevs = ani1x.aev_computer((self.species, self.coordinates))
         example_outputs = ani_model((species, aevs))
         torch.onnx.export(ani_model, ((species, aevs), ),
-                          'ani_model.onnx',
+                      f'{self.prefix_for_onnx_files}ani_model.onnx',
                           example_outputs = example_outputs, 
                           verbose=True,
                           opset_version=11)
@@ -93,10 +95,10 @@ class TestONNX(unittest.TestCase):
                                                         self.coordinates))
         example_outputs = energy_shifter((species, energies))
         torch.onnx.export(energy_shifter, ((species, energies), ),
-                          'energy_shifter.onnx',
-                          verbose=True,
-                          example_outputs = example_outputs, 
-                          opset_version=11)
+                      f'{self.prefix_for_onnx_files}energy_shifter.onnx',
+                      verbose=True,
+                      example_outputs = example_outputs, 
+                      opset_version=11)
 
     @unittest.skipIf(True, 'skip')
     def testAEVComputerTrace(self):
@@ -106,7 +108,7 @@ class TestONNX(unittest.TestCase):
         aev_computer = ani1x.aev_computer
         example_outputs = aev_computer((self.species, self.coordiantes))
         torch.onnx.export(aev_computer, ((self.species, self.coordinates), ),
-                          'aev_computer.onnx',
+                          f'{self.prefix_for_onnx_files}aev_computer.onnx',
                           verbose=True,
                           example_outputs = example_outputs, 
                           opset_version=11,
@@ -118,6 +120,7 @@ class TestScriptModuleONNX(TestONNX):
     def setUp(self):
         super().setUp()
         self.model = torch.jit.script(self.model)
+        self.prefix_for_onnx_files = 'jit_'
 
 
 if __name__ == '__main__':
