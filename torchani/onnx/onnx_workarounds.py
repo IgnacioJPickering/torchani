@@ -24,6 +24,7 @@ def opset11_any(x: Tensor) -> Tensor:
     return x
 
 
+
 def opset11_repeat_interleave(times_to_repeat: Tensor,
                               sequence: bool = False) -> Tensor:
     # TODO: sequence is a convenience overload that instead of repeating
@@ -35,6 +36,10 @@ def opset11_repeat_interleave(times_to_repeat: Tensor,
     # only single argument overload is needed for AEVComputer
     assert len(times_to_repeat.shape
                ) == 1, 'opset11_repeat_interleave only accepts 1D tensors'
+
+    # empty input means output empty tensor
+    if times_to_repeat.numel() == 0:
+        return times_to_repeat
 
     max_times_to_repeat = times_to_repeat.max()
     numbers_to_repeat = torch.arange(len(times_to_repeat),
