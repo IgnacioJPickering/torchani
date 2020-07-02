@@ -13,7 +13,7 @@ import unittest
 
 
 class ForcesModel(torch.nn.Module):
-    # TODO: check if TensorRT has a builtin autograd
+    # TensorRT does NOT have a builtin autograd
     # TODO: check if this has any chance of working or is just fantasy
     # if ONNX doesn't have a builtin autograd something like this may be
     # necessary in order to calculate forces, this is a model that internally
