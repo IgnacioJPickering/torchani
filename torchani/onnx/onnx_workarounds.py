@@ -19,6 +19,7 @@ def opset11_unique_consecutive():
 
 
 def opset11_any(x: Tensor) -> Tensor:
+    # TODO: This should work for arbitrary dimensions
     x = x.flatten()  # it is not necessary to know about dimensions for this
     x = (torch.sum(x) > 0)
     return x
