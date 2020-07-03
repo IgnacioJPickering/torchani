@@ -74,7 +74,8 @@ class TestTraceONNX(unittest.TestCase):
                                     dtype=torch.long,
                                     device=self.device)
         self.ensemble_model = torchani.models.ANI1x(periodic_table_index=False,
-                                           onnx_opset11=True).to(self.device)
+                                                    onnx_opset11=True).to(
+                                                        self.device)
         self.model = self.ensemble_model[0]
 
         self.prefix_for_onnx_files = ''
@@ -110,10 +111,7 @@ class TestTraceONNX(unittest.TestCase):
 
         example_outputs = ani_model(species, aevs)
         # no use for names and Dynamic axes when tracing
-        torch.onnx.export(ani_model, (
-            species,
-            aevs,
-        ),
+        torch.onnx.export(ani_model, (species, aevs),
                           f'{self.prefix_for_onnx_files}{file_name}.onnx',
                           input_names=['species', 'aevs'],
                           output_names=['species_out', 'unshifted_energies'],
@@ -133,7 +131,7 @@ class TestTraceONNX(unittest.TestCase):
                               'unshifted_energies': {
                                   0: 'conformations'
                               }
-                          },
+                          }, # noqa
                           example_outputs=example_outputs,
                           opset_version=11)
         model_onnx = onnx.load(f'{self.prefix_for_onnx_files}{file_name}.onnx')
@@ -168,10 +166,11 @@ class TestTraceONNX(unittest.TestCase):
                               'shifted_energies': {
                                   0: 'conformations'
                               }
-                          },
+                          },  # noqa
                           example_outputs=example_outputs,
                           opset_version=11)
-        model_onnx = onnx.load(f'{self.prefix_for_onnx_files}energy_shifter.onnx')
+        model_onnx = onnx.load(
+            f'{self.prefix_for_onnx_files}energy_shifter.onnx')
         onnx.checker.check_model(model_onnx)
 
     @unittest.skipIf(True, 'skip')
@@ -213,10 +212,10 @@ class TestScriptModuleONNX(TestTraceONNX):
     def testANIModel(self):
         # checks if ANIModel is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
-        # TODO: The exported graph for ANIModel is very wrong 
-        # right now, that is possibly because of the 
+        # TODO: The exported graph for ANIModel is very wrong
+        # right now, that is possibly because of the
         # 'for i, (_, m) in enumerate(self.items()) loop'
-        # which it seems like it is not registered at all by 
+        # which it seems like it is not registered at all by
         # onnx (but it is if the model is traced)
         ani_model = ModelWrapper(self.model.neural_networks)
         ani_model = torch.jit.script(ani_model)
