@@ -53,9 +53,8 @@ class ANIModel(torch.nn.ModuleDict):
         # dummy buffer tensor to set devices and dtypes of dynamically created
         # float32/float64 tensors, which is necessary for onnx support, since
         # onnx doesn't support other.dtype / other.device when other is not a
-        # buffer 
+        # buffer
         self.register_buffer('current_float', torch.tensor(0.0))
-
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
