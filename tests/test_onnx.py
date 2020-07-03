@@ -53,9 +53,9 @@ class TestTraceONNX(unittest.TestCase):
     # molecule type, which is not ideal but this is done as a benchmarking
     # exercise for the moment
 
-    # checks if ANIModel, EnergyShifter, etc are onnx-traceable
-    # currently only checks gross RuntimeErrors when tracing and checks if
-    # the resulting model intermediate representation is well formed
+    # checks if ANIModel, EnergyShifter, etc are onnx-traceable currently this
+    # test only checks gross RuntimeErrors when tracing and checks if the
+    # resulting model intermediate representation is well formed
 
     def setUp(self):
         self.device = torch.device(
@@ -73,9 +73,10 @@ class TestTraceONNX(unittest.TestCase):
         self.species = torch.tensor([[1, 2, 3, 0, 0], [1, 2, 3, 0, 0]],
                                     dtype=torch.long,
                                     device=self.device)
-        self.model = torchani.models.ANI1x(periodic_table_index=False,
-                                           model_index=0,
+        self.ensemble_model = torchani.models.ANI1x(periodic_table_index=False,
                                            onnx_opset11=True).to(self.device)
+        self.model = self.ensemble_model[0]
+
         self.prefix_for_onnx_files = ''
 
     @unittest.skipIf(True, 'always')
@@ -91,17 +92,19 @@ class TestTraceONNX(unittest.TestCase):
                           operator_export_type=torch.onnx.OperatorExportTypes.
                           ONNX_ATEN_FALLBACK)
 
-    @unittest.skipIf(True, 'always')
     def testANIModel(self):
         ani_model = ModelWrapper(self.model.neural_networks)
         self._testANIModel(ani_model)
 
-    @unittest.skipIf(True, 'always')
     def testEnergyShifter(self):
         energy_shifter = ModelWrapper(self.model.energy_shifter)
         self._testEnergyShifter(energy_shifter)
 
-    def _testANIModel(self, ani_model):
+    def testEnsemble(self):
+        ensemble = ModelWrapper(self.ensemble_model.neural_networks)
+        self._testANIModel(ensemble, file_name='ensemble')
+
+    def _testANIModel(self, ani_model, file_name='ani_model'):
         species, aevs = self.model.aev_computer(
             (self.species, self.coordinates))
 
@@ -111,7 +114,7 @@ class TestTraceONNX(unittest.TestCase):
             species,
             aevs,
         ),
-                          f'{self.prefix_for_onnx_files}ani_model.onnx',
+                          f'{self.prefix_for_onnx_files}{file_name}.onnx',
                           input_names=['species', 'aevs'],
                           output_names=['species_out', 'unshifted_energies'],
                           dynamic_axes={
@@ -132,9 +135,8 @@ class TestTraceONNX(unittest.TestCase):
                               }
                           },
                           example_outputs=example_outputs,
-                          verbose=True, 
                           opset_version=11)
-        model_onnx = onnx.load(f'{self.prefix_for_onnx_files}ani_model.onnx')
+        model_onnx = onnx.load(f'{self.prefix_for_onnx_files}{file_name}.onnx')
         onnx.checker.check_model(model_onnx)
 
     def _testEnergyShifter(self, energy_shifter):
@@ -196,7 +198,6 @@ class TestScriptModuleONNX(TestTraceONNX):
         super().setUp()
         self.prefix_for_onnx_files = 'jit_'
 
-    @unittest.skipIf(True, 'always')
     def testEnergyShifter(self):
         # checks if EnergyShifter is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
@@ -204,6 +205,10 @@ class TestScriptModuleONNX(TestTraceONNX):
         energy_shifter = torch.jit.script(energy_shifter)
         self._testEnergyShifter(energy_shifter)
 
+    def testEnsemble(self):
+        ensemble = ModelWrapper(self.ensemble_model.neural_networks)
+        ensemble = torch.jit.script(ensemble)
+        self._testANIModel(ensemble, file_name='ensemble')
 
     def testANIModel(self):
         # checks if ANIModel is onnx-traceable

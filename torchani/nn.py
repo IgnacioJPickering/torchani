@@ -84,7 +84,7 @@ class Ensemble(torch.nn.ModuleList):
 
     def __init__(self, modules):
         super().__init__(modules)
-        self.size = len(modules)
+        self.register_buffer('size', torch.tensor(len(modules), dtype=torch.long))
 
     def forward(self, species_input: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
