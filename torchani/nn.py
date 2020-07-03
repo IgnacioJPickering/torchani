@@ -67,10 +67,13 @@ class ANIModel(torch.nn.ModuleDict):
 
         for i, (_, m) in enumerate(self.items()):
             mask = (species_ == i)
-            midx = mask.nonzero().flatten()
+            # onnx doesn't support flatten() in some contexts
+            midx = mask.nonzero().view(-1)
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
-                output.masked_scatter_(mask, m(input_).flatten())
+                # in place masked scatter is interpreted wrongly by onnx, as if
+                # output was not changed at all
+                output = output.masked_scatter(mask, m(input_).view(-1))
         # onnx does not support view_as()
         output = output.view(species.size())
         return SpeciesEnergies(species, torch.sum(output, dim=1))

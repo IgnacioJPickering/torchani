@@ -2,6 +2,7 @@ import torch
 from torch import Tensor
 import torchani
 import unittest
+import onnx
 #  current unsupported aten operators in opset 12 (ONNX 1.7.0):
 # -torch.Tensor.index_add
 # -torch.Tensor.unique_consecutive
@@ -43,12 +44,19 @@ class ForcesModel(torch.nn.Module):
 
 
 class TestTraceONNX(unittest.TestCase):
-    # tracing tests are currently performed falling back on aten operators for
+    # tracing tests are currently performed for AEVComputer by falling back on aten operators for
     # opset 11 which is the version supported by NVIDIA TensorRT to determine
-    # which operators are unsupported and which ones are supported WARNING:
+    # which operators are unsupported and which ones are supported
+
+    # WARNING:
     # tracing a model for onnx means that the model will be fixed for one
     # molecule type, which is not ideal but this is done as a benchmarking
     # exercise for the moment
+
+    # checks if ANIModel, EnergyShifter, etc are onnx-traceable
+    # currently only checks gross RuntimeErrors when tracing and checks if
+    # the resulting model intermediate representation is well formed
+
     def setUp(self):
         self.device = torch.device(
             'cuda' if torch.cuda.is_available() else 'cpu')
@@ -83,17 +91,17 @@ class TestTraceONNX(unittest.TestCase):
                           operator_export_type=torch.onnx.OperatorExportTypes.
                           ONNX_ATEN_FALLBACK)
 
+    @unittest.skipIf(True, 'always')
     def testANIModel(self):
         ani_model = ModelWrapper(self.model.neural_networks)
         self._testANIModel(ani_model)
 
+    @unittest.skipIf(True, 'always')
     def testEnergyShifter(self):
         energy_shifter = ModelWrapper(self.model.energy_shifter)
         self._testEnergyShifter(energy_shifter)
 
     def _testANIModel(self, ani_model):
-        # checks if ANIModel is onnx-traceable
-        # currently only checks gross RuntimeErrors when tracing
         species, aevs = self.model.aev_computer(
             (self.species, self.coordinates))
 
@@ -124,7 +132,10 @@ class TestTraceONNX(unittest.TestCase):
                               }
                           },
                           example_outputs=example_outputs,
+                          verbose=True, 
                           opset_version=11)
+        model_onnx = onnx.load(f'{self.prefix_for_onnx_files}ani_model.onnx')
+        onnx.checker.check_model(model_onnx)
 
     def _testEnergyShifter(self, energy_shifter):
         # checks if EnergyShifter is onnx-traceable
@@ -158,6 +169,8 @@ class TestTraceONNX(unittest.TestCase):
                           },
                           example_outputs=example_outputs,
                           opset_version=11)
+        model_onnx = onnx.load(f'{self.prefix_for_onnx_files}energy_shifter.onnx')
+        onnx.checker.check_model(model_onnx)
 
     @unittest.skipIf(True, 'skip')
     def testAEVComputer(self):
@@ -176,11 +189,14 @@ class TestTraceONNX(unittest.TestCase):
 
 
 class TestScriptModuleONNX(TestTraceONNX):
-    # Tests ScriptModule exports instead of plain traces
+    # checks if ANIModel, EnergyShifter, etc are onnx-exportable as
+    # ScriptModules currently only checks gross RuntimeErrors when tracing and
+    # checks if the resulting model intermediate representation is well formed
     def setUp(self):
         super().setUp()
         self.prefix_for_onnx_files = 'jit_'
 
+    @unittest.skipIf(True, 'always')
     def testEnergyShifter(self):
         # checks if EnergyShifter is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
@@ -192,6 +208,11 @@ class TestScriptModuleONNX(TestTraceONNX):
     def testANIModel(self):
         # checks if ANIModel is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
+        # TODO: The exported graph for ANIModel is very wrong 
+        # right now, that is possibly because of the 
+        # 'for i, (_, m) in enumerate(self.items()) loop'
+        # which it seems like it is not registered at all by 
+        # onnx (but it is if the model is traced)
         ani_model = ModelWrapper(self.model.neural_networks)
         ani_model = torch.jit.script(ani_model)
         self._testANIModel(ani_model)
