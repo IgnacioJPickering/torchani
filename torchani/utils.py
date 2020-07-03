@@ -150,8 +150,9 @@ class EnergyShifter(torch.nn.Module):
             fit. The intercept will also be taken into account to shift energies.
     """
 
-    def __init__(self, self_energies, fit_intercept = False):
-        super(EnergyShifter, self).__init__()
+
+    def __init__(self, self_energies, fit_intercept=False):
+        super().__init__()
 
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.double)
