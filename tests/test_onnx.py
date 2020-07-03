@@ -19,7 +19,9 @@ class ModelWrapper(torch.nn.Module):
         self.model = model
 
     def forward(self, species: Tensor, input_: Tensor):
-        return self.model((species, input_))
+        species = self.model((species, input_))[0]
+        out = self.model((species, input_))[1]
+        return species, out
 
 
 class ForcesModel(torch.nn.Module):
@@ -40,7 +42,7 @@ class ForcesModel(torch.nn.Module):
         return forces
 
 
-class TestONNX(unittest.TestCase):
+class TestTraceONNX(unittest.TestCase):
     # tracing tests are currently performed falling back on aten operators for
     # opset 11 which is the version supported by NVIDIA TensorRT to determine
     # which operators are unsupported and which ones are supported WARNING:
@@ -69,7 +71,7 @@ class TestONNX(unittest.TestCase):
         self.prefix_for_onnx_files = ''
 
     @unittest.skipIf(True, 'always')
-    def testForcesTrace(self):
+    def testForces(self):
         forces_model = ForcesModel(self.model).to(self.device)
         example_outputs = forces_model((self.species, self.coordiantes))
 
@@ -81,43 +83,84 @@ class TestONNX(unittest.TestCase):
                           operator_export_type=torch.onnx.OperatorExportTypes.
                           ONNX_ATEN_FALLBACK)
 
-    def testANIModelTrace(self):
+    def testANIModel(self):
+        ani_model = ModelWrapper(self.model.neural_networks)
+        self._testANIModel(ani_model)
+
+    def testEnergyShifter(self):
+        energy_shifter = ModelWrapper(self.model.energy_shifter)
+        self._testEnergyShifter(energy_shifter)
+
+    def _testANIModel(self, ani_model):
         # checks if ANIModel is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
-        ani1x = self.model
-        ani_model = ModelWrapper(ani1x.neural_networks)
-        species, aevs = ani1x.aev_computer((self.species, self.coordinates))
-        example_outputs = ani_model(species, aevs)
-        torch.onnx.export(
-            ani_model,
-            (
-                species,
-                aevs,
-            ),
-            f'{self.prefix_for_onnx_files}ani_model.onnx',
-            example_outputs=example_outputs,
-            opset_version=11)
+        species, aevs = self.model.aev_computer(
+            (self.species, self.coordinates))
 
-    def testEnergyShifterTrace(self):
+        example_outputs = ani_model(species, aevs)
+        # no use for names and Dynamic axes when tracing
+        torch.onnx.export(ani_model, (
+            species,
+            aevs,
+        ),
+                          f'{self.prefix_for_onnx_files}ani_model.onnx',
+                          input_names=['species', 'aevs'],
+                          output_names=['species_out', 'unshifted_energies'],
+                          dynamic_axes={
+                              'species': {
+                                  0: 'conformations',
+                                  1: 'atoms'
+                              },
+                              'aevs': {
+                                  0: 'conformations',
+                                  1: 'atoms'
+                              },
+                              'species_out': {
+                                  0: 'conformations',
+                                  1: 'atoms'
+                              },
+                              'unshifted_energies': {
+                                  0: 'conformations'
+                              }
+                          },
+                          example_outputs=example_outputs,
+                          opset_version=11)
+
+    def _testEnergyShifter(self, energy_shifter):
         # checks if EnergyShifter is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
-        ani1x = self.model
-        energy_shifter = ModelWrapper(ani1x.energy_shifter)
 
-        species, energies = torchani.nn.Sequential(ani1x.aev_computer,
-                                                   ani1x.neural_networks)(
+        species, energies = torchani.nn.Sequential(self.model.aev_computer,
+                                                   self.model.neural_networks)(
                                                        (self.species,
                                                         self.coordinates))
         example_outputs = energy_shifter(species, energies)
-        torch.onnx.export(
-            energy_shifter,
-            (species, energies),
-            f'{self.prefix_for_onnx_files}energy_shifter.onnx',
-            example_outputs=example_outputs,
-            opset_version=11)
+        # no use for names and Dynamic axes when tracing
+        torch.onnx.export(energy_shifter, (species, energies),
+                          f'{self.prefix_for_onnx_files}energy_shifter.onnx',
+                          input_names=['species', 'unshifted_energies'],
+                          output_names=['species_out', 'shifted_energies'],
+                          dynamic_axes={
+                              'species': {
+                                  0: 'conformations',
+                                  1: 'atoms'
+                              },
+                              'unshifted_energies': {
+                                  0: 'conformations'
+                              },
+                              'species_out': {
+                                  0: 'conformations',
+                                  1: 'atoms'
+                              },
+                              'shifted_energies': {
+                                  0: 'conformations'
+                              }
+                          },
+                          example_outputs=example_outputs,
+                          opset_version=11)
 
     @unittest.skipIf(True, 'skip')
-    def testAEVComputerTrace(self):
+    def testAEVComputer(self):
         # checks if AEVComputer() is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
         ani1x = self.model
@@ -132,49 +175,26 @@ class TestONNX(unittest.TestCase):
                           ONNX_ATEN_FALLBACK)
 
 
-class TestScriptModuleONNX(TestONNX):
+class TestScriptModuleONNX(TestTraceONNX):
     # Tests ScriptModule exports instead of plain traces
     def setUp(self):
         super().setUp()
         self.prefix_for_onnx_files = 'jit_'
 
-    def testEnergyShifterTrace(self):
+    def testEnergyShifter(self):
         # checks if EnergyShifter is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
         energy_shifter = ModelWrapper(self.model.energy_shifter)
         energy_shifter = torch.jit.script(energy_shifter)
+        self._testEnergyShifter(energy_shifter)
 
-        species, energies = torchani.nn.Sequential(self.model.aev_computer,
-                                                   self.model.neural_networks)(
-                                                       (self.species,
-                                                        self.coordinates))
 
-        example_outputs = energy_shifter(species, energies)
-        torch.onnx.export(
-            energy_shifter,
-            (species, energies),
-            f'{self.prefix_for_onnx_files}energy_shifter.onnx',
-            example_outputs=example_outputs,
-            opset_version=11)
-
-    def testANIModelTrace(self):
+    def testANIModel(self):
         # checks if ANIModel is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
-        ani1x = self.model
-        ani_model = ModelWrapper(ani1x.neural_networks)
+        ani_model = ModelWrapper(self.model.neural_networks)
         ani_model = torch.jit.script(ani_model)
-
-        species, aevs = ani1x.aev_computer((self.species, self.coordinates))
-        example_outputs = ani_model(species, aevs)
-        torch.onnx.export(
-            ani_model,
-            (
-                species,
-                aevs,
-            ),
-            f'{self.prefix_for_onnx_files}ani_model.onnx',
-            example_outputs=example_outputs,
-            opset_version=11)
+        self._testANIModel(ani_model)
 
 
 if __name__ == '__main__':
