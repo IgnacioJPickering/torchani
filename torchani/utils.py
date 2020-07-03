@@ -150,18 +150,18 @@ class EnergyShifter(torch.nn.Module):
             fit. The intercept will also be taken into account to shift energies.
     """
 
-    def __init__(self, self_energies, fit_intercept=False):
+    def __init__(self, self_energies, fit_intercept = False):
         super(EnergyShifter, self).__init__()
 
-        self.fit_intercept = torch.tensor(fit_intercept, dtype=torch.bool)
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.double)
 
+        self.register_buffer('fit_intercept', torch.tensor(fit_intercept, dtype=torch.bool))
         self.register_buffer('self_energies', self_energies)
         self.register_buffer('mask_index', torch.tensor(-1, dtype=torch.long))
         self.register_buffer('mask_self_energy', torch.tensor(0.0, dtype=torch.double) )
 
-    def sae(self, species):
+    def sae(self, species: Tensor) -> Tensor:
         """Compute self energies for molecules.
 
         Padding atoms will be automatically excluded.

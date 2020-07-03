@@ -195,7 +195,7 @@ class Transformations:
                 sae_ = sae[:-1]
             for s, e in zip(species, sae_):
                 self_energies[s] = e
-            shifter.__init__(sae, shifter.fit_intercept)
+            shifter.__init__(sae, shifter.fit_intercept.item())
         gc.collect()
 
         def reenterable_iterable_factory():
