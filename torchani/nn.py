@@ -49,12 +49,13 @@ class ANIModel(torch.nn.ModuleDict):
         return od
 
     def __init__(self, modules):
-        super(ANIModel, self).__init__(self.ensureOrderedDict(modules))
+        super().__init__(self.ensureOrderedDict(modules))
         # dummy buffer tensor to set devices and dtypes of dynamically created
         # float32/float64 tensors, which is necessary for onnx support, since
         # onnx doesn't support other.dtype / other.device when other is not a
         # buffer 
         self.register_buffer('current_float', torch.tensor(0.0))
+
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -97,7 +98,7 @@ class Sequential(torch.nn.ModuleList):
     """Modified Sequential module that accept Tuple type as input"""
 
     def __init__(self, *modules):
-        super(Sequential, self).__init__(modules)
+        super().__init__(modules)
 
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
