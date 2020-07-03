@@ -50,6 +50,11 @@ class ANIModel(torch.nn.ModuleDict):
 
     def __init__(self, modules):
         super(ANIModel, self).__init__(self.ensureOrderedDict(modules))
+        # dummy buffer tensor to set devices and dtypes of dynamically created
+        # float32/float64 tensors, which is necessary for onnx support, since
+        # onnx doesn't support other.dtype / other.device when other is not a
+        # buffer 
+        self.register_buffer('current_float', torch.tensor(0.0))
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -58,13 +63,7 @@ class ANIModel(torch.nn.ModuleDict):
         species_ = species.flatten()
         aev = aev.flatten(0, 1)
 
-        #output = aev.new_zeros(species_.shape)
-        # this hardcodes the device of the tensor which is non ideal but it is
-        # necessary for ONNX support, since ONNX does not support
-        # "other.device"
-        # also float is hardcoded which is not ideal
-        output = torch.zeros(species_.shape, dtype=torch.float,
-                device=torch.device('cuda'))
+        output = torch.zeros(species_.shape, device=self.current_float.device, dtype=self.current_float.dtype)
 
         for i, (_, m) in enumerate(self.items()):
             mask = (species_ == i)
