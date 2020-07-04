@@ -159,7 +159,7 @@ class EnergyShifter(torch.nn.Module):
         self.register_buffer('fit_intercept', torch.tensor(fit_intercept, dtype=torch.bool))
         self.register_buffer('self_energies', self_energies)
         self.register_buffer('mask_index', torch.tensor(-1, dtype=torch.long))
-        self.register_buffer('mask_self_energy', torch.tensor(0.0, dtype=torch.double))
+        self.register_buffer('mask_self_energy', torch.tensor(0.0))
 
     def sae(self, species: Tensor) -> Tensor:
         """Compute self energies for molecules.
@@ -174,13 +174,14 @@ class EnergyShifter(torch.nn.Module):
             :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
             for molecular self energies.
         """
-        intercept = torch.tensor(0.0, dtype=torch.double)
-        if self.fit_intercept:
-            intercept = self.self_energies[-1]
 
         self_energies = self.self_energies[species]
-        self_energies[species == self.mask_index] = self.mask_self_energy
-        return self_energies.sum(dim=1) + intercept
+        mask = (species == self.mask_index)
+        self_energies = self_energies.masked_fill(mask, self.mask_self_energy)
+
+        if self.fit_intercept:
+            return self_energies.sum(dim=1) + self.self_energies[-1]
+        return self_energies.sum(dim=1) 
 
     def forward(self, species_energies: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,

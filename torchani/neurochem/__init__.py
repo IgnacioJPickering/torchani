@@ -14,7 +14,7 @@ import sys
 from ..nn import ANIModel, Ensemble, Gaussian, Sequential
 from ..utils import EnergyShifter, ChemicalSymbolsToInts
 from ..aev import AEVComputer
-from ..onnx import Opset11CELU
+from ..onnx import Opset11CELU, Opset11Linear
 from torch.optim import AdamW
 from collections import OrderedDict
 from torchani.units import hartree2kcalmol
@@ -229,7 +229,10 @@ def load_atomic_network(filename, onnx_opset11=False):
             bfn, bsz = s['biases']
             if in_size * out_size != wsz or out_size != bsz:
                 raise ValueError('bad parameter shape')
-            layer = torch.nn.Linear(in_size, out_size)
+            if onnx_opset11:
+                layer = Opset11Linear(in_size, out_size)
+            else:
+                layer = torch.nn.Linear(in_size, out_size)
             wfn = os.path.join(networ_dir, wfn)
             bfn = os.path.join(networ_dir, bfn)
             load_param_file(layer, in_size, out_size, wfn, bfn)
