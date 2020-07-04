@@ -129,6 +129,10 @@ class TestTraceONNX(unittest.TestCase):
         energy_shifter = ModelWrapper(self.model.energy_shifter)
         self._testEnergyShifter(energy_shifter, 'energy_shifter')
 
+    def testSequential(self):
+        sequential = ModelWrapper(torchani.nn.Sequential(self.model.neural_networks, self.model.energy_shifter))
+        self._testNNModuleCommon(sequential, 'sequential', output_shifted_energies=True)
+
     def testANIModel(self):
         nn_module = ModelWrapper(self.model.neural_networks)
         self._testNNModuleCommon(nn_module, 'ani_model')
@@ -164,12 +168,15 @@ class TestTraceONNX(unittest.TestCase):
         # remove created onnx file to avoid polluting the tests tree
         os.unlink(onnx_file_name)
 
-    def _testNNModuleCommon(self, nn_module, name):
+    def _testNNModuleCommon(self, nn_module, name, output_shifted_energies=False):
         # This function is used to test both torchani.Ensemble and
         # torchani.ANIModule since they expose the same API
         # nn_module must already be wrapped
         input_names = ['species', 'aevs']
-        output_names = ['unshifted_energies']
+        if output_shifted_energies:
+            output_names = ['energies']
+        else:
+            output_names = ['unshifted_energies']
         # C : conformations (batch dimension), A : atoms
         dynamic_axes = {
             input_names[0]: {
@@ -253,6 +260,11 @@ class TestScriptModuleONNX(TestTraceONNX):
     def setUp(self):
         super().setUp()
         self.prefix_for_onnx_files = 'jit_'
+
+    def testSequential(self):
+        sequential = ModelWrapper(torchani.nn.Sequential(self.model.neural_networks, self.model.energy_shifter))
+        sequential = torch.jit.script(sequential)
+        self._testNNModuleCommon(sequential, 'sequential', output_shifted_energies=True)
 
     def testANIModel(self):
         nn_module = ModelWrapper(self.model.neural_networks)

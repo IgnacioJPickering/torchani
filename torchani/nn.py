@@ -52,8 +52,8 @@ class ANIModel(torch.nn.ModuleDict):
         super().__init__(self.ensureOrderedDict(modules))
         # dummy buffer tensor to set devices and dtypes of dynamically created
         # float32/float64 tensors, which is necessary for onnx support, since
-        # onnx doesn't support other.dtype / other.device when other is not a
-        # buffer
+        # onnx.export doesn't support other.dtype / other.device when "other"
+        # is not a buffer
         self.register_buffer('current_float', torch.tensor(0.0))
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],
@@ -67,14 +67,13 @@ class ANIModel(torch.nn.ModuleDict):
 
         for i, (_,m) in enumerate(self.items()):
             mask = (species_ == i)
-            # onnx doesn't support flatten() in some contexts
+            # onnx.export doesn't support flatten() in some contexts
             midx = mask.nonzero().view(-1)
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
-                # in place masked scatter is interpreted wrongly by onnx, as if
-                # output was not changed at all
+                # in-place masked scatter is interpreted wrongly by onnx.export
                 output = output.masked_scatter(mask, m(input_).view(-1))
-        #onnx does not support view_as()
+        # onnx.export does not support view_as()
         output = output.view(species.size())
         return SpeciesEnergies(species, torch.sum(output, dim=1))
 
@@ -84,7 +83,14 @@ class Ensemble(torch.nn.ModuleList):
 
     def __init__(self, modules):
         super().__init__(modules)
+        # size has to be explicitly registered as floating point to avoid 
+        # onnx.export interpreting it as an int
         self.register_buffer('size', torch.tensor(float(len(modules))))
+
+        # dummy buffer tensor to set devices and dtypes of dynamically created
+        # float32/float64 tensors, which is necessary for onnx support, since
+        # onnx.export doesn't support other.dtype / other.device when "other"
+        # is not a buffer
         self.register_buffer('current_float', torch.tensor(0.0))
 
     def forward(self, species_input: Tuple[Tensor, Tensor],
