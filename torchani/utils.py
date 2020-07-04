@@ -150,7 +150,7 @@ class EnergyShifter(torch.nn.Module):
             fit. The intercept will also be taken into account to shift energies.
     """
 
-    def __init__(self, self_energies, fit_intercept=False):
+    def __init__(self, self_energies=None, fit_intercept=False):
         super().__init__()
 
         if self_energies is not None:
@@ -158,8 +158,7 @@ class EnergyShifter(torch.nn.Module):
 
         self.register_buffer('fit_intercept', torch.tensor(fit_intercept, dtype=torch.bool))
         self.register_buffer('self_energies', self_energies)
-        self.register_buffer('mask_index', torch.tensor(-1, dtype=torch.long))
-        self.register_buffer('mask_self_energy', torch.tensor(0.0))
+        self.register_buffer('dummy_atom_self_energy', torch.tensor(0.0))
 
     def sae(self, species: Tensor) -> Tensor:
         """Compute self energies for molecules.
@@ -174,10 +173,13 @@ class EnergyShifter(torch.nn.Module):
             :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
             for molecular self energies.
         """
+        assert self.self_energies is not None
 
         self_energies = self.self_energies[species]
-        mask = (species == self.mask_index)
-        self_energies = self_energies.masked_fill(mask, self.mask_self_energy)
+
+        # -1 is the index that determines dummy atoms
+        mask = (species == -1)
+        self_energies = self_energies.masked_fill(mask, self.dummy_atom_self_energy)
 
         if self.fit_intercept:
             return self_energies.sum(dim=1) + self.self_energies[-1]
