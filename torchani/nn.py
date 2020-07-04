@@ -69,7 +69,7 @@ class ANIModel(torch.nn.ModuleDict):
             mask = (species_ == i)
             # onnx doesn't support flatten() in some contexts
             midx = mask.nonzero().view(-1)
-            if mask.shape[0] > 0:
+            if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
                 # in place masked scatter is interpreted wrongly by onnx, as if
                 # output was not changed at all
@@ -84,16 +84,22 @@ class Ensemble(torch.nn.ModuleList):
 
     def __init__(self, modules):
         super().__init__(modules)
-        self.register_buffer('size', torch.tensor(len(modules), dtype=torch.long))
+        self.register_buffer('size', torch.tensor(float(len(modules))))
+        self.register_buffer('current_float', torch.tensor(0.0))
 
     def forward(self, species_input: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        sum_ = 0
+
+        species, input_ = species_input
+        num_conformations = species.shape[0]
+        average = torch.zeros(num_conformations, dtype=self.current_float.dtype, device=self.current_float.device)
+
         for x in self:
-            sum_ += x(species_input)[1]
-        species, _ = species_input
-        return SpeciesEnergies(species, sum_ / self.size)
+            average += x((species, input_))[1]
+
+        average = average / self.size
+        return SpeciesEnergies(species, average)
 
 
 class Sequential(torch.nn.ModuleList):

@@ -2,8 +2,15 @@ import torch
 from torch import Tensor
 import torchani
 import unittest
-import onnx
 import numpy as np
+import os
+
+# used for explicit graph checking
+import onnx
+
+# Microsoft backend used to validate runtime forward passes of exported models
+import onnxruntime as ort
+
 #  current unsupported aten operators in opset 12 (ONNX 1.7.0):
 # -torch.Tensor.index_add
 # -torch.Tensor.unique_consecutive
@@ -54,9 +61,14 @@ class TestTraceONNX(unittest.TestCase):
     # molecule type, which is not ideal but this is done as a benchmarking
     # exercise for the moment
 
-    # checks if ANIModel, EnergyShifter, etc are onnx-traceable currently this
-    # test only checks gross RuntimeErrors when tracing and checks if the
-    # resulting model intermediate representation is well formed
+    # checks if ANIModel, EnergyShifter, Ensemble, etc are onnx-traceable
+    # currently this test only checks gross RuntimeErrors when tracing and
+    # checks if the resulting model intermediate representation is well formed
+
+    # It is necessary to wrap the model inside a Module that
+    # does not accept or output tuples, since it seems like this can screw
+    # up ONNX exporting in various ways. Support for non tensor inputs /
+    # outputs is not very good currently
 
     def setUp(self):
         self.device = torch.device(
@@ -71,24 +83,25 @@ class TestTraceONNX(unittest.TestCase):
              [[0., 0., 0.], [0., 0., 0.], [0., 0., 0.], [0., 0., 0.],
               [0., 0., 0.]]],
             requires_grad=True,
-            device=self.device, dtype=torch.float)
+            device=self.device,
+            dtype=torch.float)
         self.species = torch.tensor([[1, 2, 3, 0, 0], [1, 2, 3, 0, 0]],
                                     dtype=torch.long,
                                     device=self.device)
-        self.np_coordinates = self.coordinates.clone().detach().cpu().numpy()
-        self.np_species = self.species.clone().detach().cpu().numpy()
-        self.ensemble_model = torchani.models.ANI1x(periodic_table_index=False,
-                                                    onnx_opset11=True).to(
-                                                        self.device).to(torch.float)
+        self.np_coordinates = self.coordinates.clone().detach().cpu().numpy(
+        ).astype(np.float32)
+        self.np_species = self.species.clone().detach().cpu().numpy().astype(
+            np.long)
+        self.ensemble_model = torchani.models.ANI1x(
+            periodic_table_index=False,
+            onnx_opset11=True).to(self.device).to(torch.float)
         self.model = self.ensemble_model[0]
-
         self.prefix_for_onnx_files = ''
 
     @unittest.skipIf(True, 'always')
     def testForces(self):
         forces_model = ForcesModel(self.model).to(self.device)
         example_outputs = forces_model((self.species, self.coordiantes))
-        
         torch.onnx.export(forces_model, ((self.species, self.coordinates), ),
                           f'{self.prefix_for_onnx_files}forces_model.onnx',
                           verbose=True,
@@ -96,102 +109,6 @@ class TestTraceONNX(unittest.TestCase):
                           example_outputs=example_outputs,
                           operator_export_type=torch.onnx.OperatorExportTypes.
                           ONNX_ATEN_FALLBACK)
-
-    def testANIModel(self):
-        ani_model = ModelWrapper(self.model.neural_networks)
-        self._testANIModel(ani_model)
-
-    def testEnergyShifter(self):
-        energy_shifter = ModelWrapper(self.model.energy_shifter)
-        self._testEnergyShifter(energy_shifter)
-
-    @unittest.skipIf(True, 'always')
-    def testEnsemble(self):
-        ensemble = ModelWrapper(self.ensemble_model.neural_networks)
-        self._testANIModel(ensemble, file_name='ensemble')
-
-    def _testANIModel(self, ani_model, file_name='ani_model'):
-        species, aevs = self.model.aev_computer(
-            (self.species, self.coordinates))
-        np_aevs = aevs.clone().detach().cpu().numpy()
-
-        example_outputs = ani_model(species, aevs)
-        # no use for names and Dynamic axes when tracing
-        input_names = ['species', 'aevs']
-        for k, p in ani_model.named_parameters():
-            input_names.append(k)
-
-        torch.onnx.export(ani_model, (species, aevs),
-                          f'{self.prefix_for_onnx_files}{file_name}.onnx',
-                          input_names=input_names,
-                          output_names=['unshifted_energies'],
-                          dynamic_axes={
-                              'species': {
-                                  0: 'conformations',
-                                  1: 'atoms'
-                              },
-                              'aevs': {
-                                  0: 'conformations',
-                                  1: 'atoms'
-                              },
-                              'unshifted_energies': {
-                                  0: 'conformations'
-                              }
-                          }, # noqa
-                          verbose=True, 
-                          example_outputs=example_outputs,
-                          opset_version=11)
-        model_onnx = onnx.load(f'{self.prefix_for_onnx_files}{file_name}.onnx')
-        onnx.checker.check_model(model_onnx)
-        #print(onnx.helper.printable_graph(model_onnx.graph))
-        
-        # test if the model can be run and produces an acceptable output
-        import onnxruntime as ort
-        ort_session = ort.InferenceSession(f'{self.prefix_for_onnx_files}{file_name}.onnx')
-        input_name0 = ort_session.get_inputs()[0].name
-        input_name1 = ort_session.get_inputs()[1].name
-        output_name = ort_session.get_outputs()[0].name
-        ort_session.run([output_name], {input_name0: self.np_species.astype(np.long), input_name1: np_aevs.astype(np.float32)})
-
-    def _testEnergyShifter(self, energy_shifter, file_name = 'energy_shifter'):
-        # checks if EnergyShifter is onnx-traceable
-        # currently only checks gross RuntimeErrors when tracing
-
-        species, energies = torchani.nn.Sequential(self.model.aev_computer,
-                                                   self.model.neural_networks)(
-                                                       (self.species,
-                                                        self.coordinates))
-        np_energies = energies.clone().detach().cpu().numpy()
-        example_outputs = energy_shifter(species, energies)
-        # no use for names and Dynamic axes when tracing
-        torch.onnx.export(energy_shifter, (species, energies),
-                          f'{self.prefix_for_onnx_files}energy_shifter.onnx',
-                          input_names=['species', 'unshifted_energies'],
-                          output_names=['shifted_energies'],
-                          dynamic_axes={
-                              'species': {
-                                  0: 'conformations',
-                                  1: 'atoms'
-                              },
-                              'unshifted_energies': {
-                                  0: 'conformations'
-                              },
-                              'shifted_energies': {
-                                  0: 'conformations'
-                              }
-                          },  # noqa
-                          example_outputs=example_outputs,
-                          opset_version=11)
-        model_onnx = onnx.load(
-            f'{self.prefix_for_onnx_files}energy_shifter.onnx')
-        onnx.checker.check_model(model_onnx)
-
-        import onnxruntime as ort
-        ort_session = ort.InferenceSession(f'{self.prefix_for_onnx_files}{file_name}.onnx')
-        input_name0 = ort_session.get_inputs()[0].name
-        input_name1 = ort_session.get_inputs()[1].name
-        output_name = ort_session.get_outputs()[0].name
-        ort_session.run([output_name], {input_name0: self.np_species.astype(np.long), input_name1: np_energies.astype(np.float32)})
 
     @unittest.skipIf(True, 'skip')
     def testAEVComputer(self):
@@ -208,6 +125,126 @@ class TestTraceONNX(unittest.TestCase):
                           operator_export_type=torch.onnx.OperatorExportTypes.
                           ONNX_ATEN_FALLBACK)
 
+    def testEnergyShifter(self):
+        energy_shifter = ModelWrapper(self.model.energy_shifter)
+        self._testEnergyShifter(energy_shifter, 'energy_shifter')
+
+    def testANIModel(self):
+        nn_module = ModelWrapper(self.model.neural_networks)
+        self._testNNModuleCommon(nn_module, 'ani_model')
+
+    def testEnsemble(self):
+        nn_module = ModelWrapper(self.ensemble_model.neural_networks)
+        self._testNNModuleCommon(nn_module, 'ensemble')
+
+    def _testEnergyShifter(self, module, name):
+        # This function is used to test both torchani.EnergyShifter
+        # module must already be wrapped
+        input_names = ['species', 'unshifted_energies']
+        output_names = ['energies']
+        # C : conformations (batch dimension), A : atoms
+        dynamic_axes = {
+            input_names[0]: {
+                0: 'C',
+                1: 'A'
+            },
+            input_names[1]: {
+                0: 'C'
+            },
+            output_names[0]: {
+                0: 'C'
+            }
+        }
+        energies, np_energies = self._getUnshiftedEnergies()
+        onnx_file_name = f'{self.prefix_for_onnx_files}{name}.onnx'
+        example_outputs = self._testExportModel(module, input_names, output_names, dynamic_axes,
+                              onnx_file_name, (self.species, energies))
+        self._testONNXGraph(onnx_file_name)
+        self._testONNXRuntime(self.np_species, np_energies, onnx_file_name, example_outputs)
+        # remove created onnx file to avoid polluting the tests tree
+        os.unlink(onnx_file_name)
+
+    def _testNNModuleCommon(self, nn_module, name):
+        # This function is used to test both torchani.Ensemble and
+        # torchani.ANIModule since they expose the same API
+        # nn_module must already be wrapped
+        input_names = ['species', 'aevs']
+        output_names = ['unshifted_energies']
+        # C : conformations (batch dimension), A : atoms
+        dynamic_axes = {
+            input_names[0]: {
+                0: 'C',
+                1: 'A'
+            },
+            input_names[1]: {
+                0: 'C',
+                1: 'A'
+            },
+            output_names[0]: {
+                0: 'C'
+            }
+        }
+        aevs, np_aevs = self._getAEVs()
+        onnx_file_name = f'{self.prefix_for_onnx_files}{name}.onnx'
+        example_outputs = self._testExportModel(nn_module, input_names, output_names,
+                              dynamic_axes, onnx_file_name,
+                              (self.species, aevs))
+        self._testONNXGraph(onnx_file_name)
+        self._testONNXRuntime(self.np_species, np_aevs, onnx_file_name, example_outputs)
+        os.unlink(onnx_file_name)
+
+    def _getAEVs(self):
+        species, aevs = self.model.aev_computer(
+            (self.species, self.coordinates))
+        np_aevs = aevs.clone().detach().cpu().numpy()
+        return aevs, np_aevs
+
+    def _getUnshiftedEnergies(self):
+        species, energies = torchani.nn.Sequential(self.model.aev_computer,
+                                                   self.model.neural_networks)(
+                                                       (self.species,
+                                                        self.coordinates))
+        np_energies = energies.clone().detach().cpu().numpy()
+        return energies, np_energies
+
+    def _testExportModel(self, module, input_names, output_names, dynamic_axes,
+                         onnx_file_name, inputs_):
+        species, other_input = inputs_
+        example_outputs = module(species, other_input)
+        # names are added to inputs and parameters only for easier
+        # understanding of the resulting onnx graph
+        for k, p in module.named_parameters():
+            input_names.append(k)
+        torch.onnx.export(module, (species, other_input),
+                          onnx_file_name,
+                          input_names=input_names,
+                          output_names=output_names,
+                          dynamic_axes=dynamic_axes,
+                          verbose=True,
+                          example_outputs=example_outputs,
+                          opset_version=11)
+        return example_outputs
+    @staticmethod
+    def _testONNXGraph(onnx_file_name):
+        # checks the graph using the builtin ONNX Checker
+        model_onnx = onnx.load(onnx_file_name)
+        onnx.checker.check_model(model_onnx)
+    
+    def _testONNXRuntime(self, input0, input1, onnx_file_name, example_outputs):
+        # check that model can be run by using Microsoft ONNX Runtime backend
+        ort_session = ort.InferenceSession(onnx_file_name)
+        input_name0 = ort_session.get_inputs()[0].name
+        input_name1 = ort_session.get_inputs()[1].name
+        output_name = ort_session.get_outputs()[0].name
+        output = ort_session.run([output_name], {
+            input_name0: input0,
+            input_name1: input1
+        })
+        example_outputs = example_outputs.detach().cpu().numpy()
+        # check that outputs from the model is similar to output
+        # from torchani
+        self.assertTrue(np.isclose(example_outputs, output[0]).all())
+
 
 class TestScriptModuleONNX(TestTraceONNX):
     # checks if ANIModel, EnergyShifter, etc are onnx-exportable as
@@ -217,35 +254,20 @@ class TestScriptModuleONNX(TestTraceONNX):
         super().setUp()
         self.prefix_for_onnx_files = 'jit_'
 
+    def testANIModel(self):
+        nn_module = ModelWrapper(self.model.neural_networks)
+        nn_module = torch.jit.script(nn_module)
+        self._testNNModuleCommon(nn_module, 'ani_model')
+
+    def testEnsemble(self):
+        nn_module = ModelWrapper(self.ensemble_model.neural_networks)
+        nn_module = torch.jit.script(nn_module)
+        self._testNNModuleCommon(nn_module, 'ensemble')
+
     def testEnergyShifter(self):
-        # checks if EnergyShifter is onnx-traceable
-        # currently only checks gross RuntimeErrors when tracing
         energy_shifter = ModelWrapper(self.model.energy_shifter)
         energy_shifter = torch.jit.script(energy_shifter)
-        self._testEnergyShifter(energy_shifter)
-
-    @unittest.skipIf(True, 'always')
-    def testEnsemble(self):
-        ensemble = ModelWrapper(self.ensemble_model.neural_networks)
-        ensemble = torch.jit.script(ensemble)
-        self._testANIModel(ensemble, file_name='ensemble')
-
-    def testANIModel(self):
-        # checks if ANIModel is onnx-traceable
-        # currently only checks gross RuntimeErrors when tracing
-        # TODO: The exported graph for ANIModel is very wrong
-        # right now, that is possibly because of the
-        # 'for i, (_, m) in enumerate(self.items()) loop'
-        # which it seems like it is not registered at all by
-        # onnx (but it is if the model is traced)
-        ani_model = ModelWrapper(self.model.neural_networks)
-        ani_model = torch.jit.script(ani_model)
-        torch.jit.save(ani_model, 'ani_model.jit')
-        self._testANIModel(ani_model, file_name='ani_model')
-
-        #rep = backend.prepare(model_onnx, device="CUDA:0")
-        #outputs = rep.run((self.np_species, self.np_coordinates))
-        #print(outputs)
+        self._testEnergyShifter(energy_shifter, 'energy_shifter')
 
 
 if __name__ == '__main__':
