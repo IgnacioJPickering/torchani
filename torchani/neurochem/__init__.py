@@ -14,7 +14,7 @@ import sys
 from ..nn import ANIModel, Ensemble, Gaussian, Sequential
 from ..utils import EnergyShifter, ChemicalSymbolsToInts
 from ..aev import AEVComputer
-from .parse_resource import parse_neurochem_resources
+from .parse_resources import parse_neurochem_resources
 from torch.optim import AdamW
 from collections import OrderedDict
 from torchani.units import hartree2kcalmol
