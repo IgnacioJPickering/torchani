@@ -50,31 +50,23 @@ class ANIModel(torch.nn.ModuleDict):
 
     def __init__(self, modules):
         super().__init__(self.ensureOrderedDict(modules))
-        # dummy buffer tensor to set devices and dtypes of dynamically created
-        # float32/float64 tensors, which is necessary for onnx support, since
-        # onnx.export doesn't support other.dtype / other.device when "other"
-        # is not a buffer
-        self.register_buffer('current_float', torch.tensor(0.0))
 
     def forward(self, species_aev: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         species, aev = species_aev
-        species_ = species.flatten().to(torch.long)
+        species_ = species.flatten()
         aev = aev.flatten(0, 1)
 
-        output = torch.zeros(species_.shape, device=self.current_float.device, dtype=self.current_float.dtype)
+        output = aev.new_zeros(species_.shape)
 
         for i, (_, m) in enumerate(self.items()):
             mask = (species_ == i)
-            # onnx.export doesn't support flatten() in some contexts
-            midx = mask.nonzero().view(-1)
+            midx = mask.nonzero().flatten()
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
-                # in-place masked scatter is interpreted wrongly by onnx.export
-                output = output.masked_scatter(mask, m(input_).view(-1))
-        # onnx.export does not support view_as()
-        output = output.view(species.size())
+                output.masked_scatter_(mask, m(input_).flatten())
+        output = output.view_as(species)
         return SpeciesEnergies(species, torch.sum(output, dim=1))
 
 
@@ -83,29 +75,16 @@ class Ensemble(torch.nn.ModuleList):
 
     def __init__(self, modules):
         super().__init__(modules)
-        # size has to be explicitly registered as floating point to avoid
-        # onnx.export interpreting it as an int
-        self.register_buffer('size', torch.tensor(float(len(modules))))
-
-        # dummy buffer tensor to set devices and dtypes of dynamically created
-        # float32/float64 tensors, which is necessary for onnx support, since
-        # onnx.export doesn't support other.dtype / other.device when "other"
-        # is not a buffer
-        self.register_buffer('current_float', torch.tensor(0.0))
+        self.size = len(modules)
 
     def forward(self, species_input: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-
-        species, input_ = species_input
-        num_conformations = species.shape[0]
-        average = torch.zeros(num_conformations, dtype=self.current_float.dtype, device=self.current_float.device)
-
+        sum_ = 0
         for x in self:
-            average += x((species, input_))[1]
-
-        average = average / self.size
-        return SpeciesEnergies(species, average)
+            sum_ += x(species_input)[1]
+        species, _ = species_input
+        return SpeciesEnergies(species, sum_ / self.size)
 
 
 class Sequential(torch.nn.ModuleList):

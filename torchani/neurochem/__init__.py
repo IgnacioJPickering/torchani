@@ -15,6 +15,7 @@ from ..nn import ANIModel, Ensemble, Gaussian, Sequential
 from ..utils import EnergyShifter, ChemicalSymbolsToInts
 from ..aev import AEVComputer
 from ..onnx import Opset11CELU, Opset11Linear
+from ..onnx import EnergyShifterOnyx, ANIModelOnyx, EnsembleOnyx
 from .parse_resources import parse_neurochem_resources
 from torch.optim import AdamW
 from collections import OrderedDict
@@ -72,7 +73,7 @@ class Constants(collections.abc.Mapping):
         return getattr(self, item)
 
 
-def load_sae(filename, return_dict=False):
+def load_sae(filename, return_dict=False, onnx_opset11=False):
     """Returns an object of :class:`EnergyShifter` with self energies from
     NeuroChem sae file"""
     self_energies = []
@@ -86,22 +87,30 @@ def load_sae(filename, return_dict=False):
             d[species] = value
             self_energies.append((index, value))
     self_energies = [i for _, i in sorted(self_energies)]
+    if onnx_opset11:
+        class_ = EnergyShifterOnyx
+    else:
+        class_ = EnergyShifter
+
     if return_dict:
-        return EnergyShifter(self_energies), d
-    return EnergyShifter(self_energies)
+        return class_(self_energies), d
+    return class_(self_energies)
 
 
 def _get_activation(activation_index, onnx_opset11=False):
     # Activation defined in:
     # https://github.com/Jussmith01/NeuroChem/blob/stable1/src-atomicnnplib/cunetwork/cuannlayer_t.cu#L920
+    if onnx_opset11:
+        celu_class = Opset11CELU
+    else:
+        celu_class = torch.nn.CELU
+
     if activation_index == 6:
         return None
     elif activation_index == 5:  # Gaussian
         return Gaussian()
     elif activation_index == 9:  # CELU
-        if onnx_opset11:
-            return Opset11CELU(alpha=0.1)
-        return torch.nn.CELU(alpha=0.1)
+        return celu_class(alpha=0.1)
     else:
         raise NotImplementedError(
             'Unexpected activation {}'.format(activation_index))
@@ -222,6 +231,12 @@ def load_atomic_network(filename, onnx_opset11=False):
         layer_setups = parse_nnf(buffer_)
 
         layers = []
+        if onnx_opset11:
+            linear_class = Opset11Linear
+        else:
+            linear_class = torch.nn.Linear
+
+
         for s in layer_setups:
             # construct linear layer and load parameters
             in_size = s['blocksize']
@@ -230,10 +245,7 @@ def load_atomic_network(filename, onnx_opset11=False):
             bfn, bsz = s['biases']
             if in_size * out_size != wsz or out_size != bsz:
                 raise ValueError('bad parameter shape')
-            if onnx_opset11:
-                layer = Opset11Linear(in_size, out_size)
-            else:
-                layer = torch.nn.Linear(in_size, out_size)
+                layer = linear_class(in_size, out_size)
             wfn = os.path.join(networ_dir, wfn)
             bfn = os.path.join(networ_dir, bfn)
             load_param_file(layer, in_size, out_size, wfn, bfn)
@@ -254,11 +266,16 @@ def load_model(species, dir_, onnx_opset11=False):
             chemical symbols of each supported atom type in correct order.
         dir_ (str): String for directory storing network configurations.
     """
+    if onnx_opset11:
+        animodel_class = ANIModelOnyx
+    else:
+        animodel_class = ANIModel
+
     models = OrderedDict()
     for i in species:
         filename = os.path.join(dir_, 'ANN-{}.nnf'.format(i))
         models[i] = load_atomic_network(filename, onnx_opset11)
-    return ANIModel(models)
+    return animodel_class(models)
 
 
 def load_model_ensemble(species, prefix, count, onnx_opset11=False):
@@ -272,11 +289,16 @@ def load_model_ensemble(species, prefix, count, onnx_opset11=False):
             are stored.
         count (int): Number of models in the ensemble.
     """
+    if onnx_opset11:
+        ensemble_class = EnsembleOnyx
+    else:
+        ensemble_class = Ensemble
+
     models = []
     for i in range(count):
         network_dir = os.path.join('{}{}'.format(prefix, i), 'networks')
         models.append(load_model(species, network_dir, onnx_opset11))
-    return Ensemble(models)
+    return ensemble_class(models)
 
 
 if sys.version_info[0] > 2:

@@ -150,17 +150,16 @@ class EnergyShifter(torch.nn.Module):
             fit. The intercept will also be taken into account to shift energies.
     """
 
-    def __init__(self, self_energies=None, fit_intercept=False):
+    def __init__(self, self_energies, fit_intercept=False):
         super().__init__()
 
+        self.fit_intercept = fit_intercept
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.double)
 
-        self.register_buffer('fit_intercept', torch.tensor(fit_intercept, dtype=torch.bool))
         self.register_buffer('self_energies', self_energies)
-        self.register_buffer('dummy_atom_self_energy', torch.tensor(0.0))
 
-    def sae(self, species: Tensor) -> Tensor:
+    def sae(self, species):
         """Compute self energies for molecules.
 
         Padding atoms will be automatically excluded.
@@ -173,17 +172,13 @@ class EnergyShifter(torch.nn.Module):
             :class:`torch.Tensor`: 1D vector in shape ``(conformations,)``
             for molecular self energies.
         """
-        assert self.self_energies is not None
+        intercept = 0.0
+        if self.fit_intercept:
+            intercept = self.self_energies[-1]
 
         self_energies = self.self_energies[species]
-
-        # -1 is the index that determines dummy atoms
-        mask = (species == -1)
-        self_energies = self_energies.masked_fill(mask, self.dummy_atom_self_energy)
-
-        if self.fit_intercept:
-            return self_energies.sum(dim=1) + self.self_energies[-1]
-        return self_energies.sum(dim=1)
+        self_energies[species == torch.tensor(-1, device=species.device)] = torch.tensor(0, device=species.device, dtype=torch.double)
+        return self_energies.sum(dim=1) + intercept
 
     def forward(self, species_energies: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,

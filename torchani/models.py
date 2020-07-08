@@ -65,7 +65,7 @@ class BuiltinModel(torch.nn.Module):
         consts = neurochem.Constants(const_file)
         species_converter = SpeciesConverter(consts.species)
         aev_computer = AEVComputer(**consts)
-        energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
+        energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True, onnx_opset11=onnx_opset11)
         species_to_tensor = consts.species_to_tensor
 
         network_dir = os.path.join('{}{}'.format(ensemble_prefix, model_index), 'networks')
@@ -183,7 +183,7 @@ class BuiltinEnsemble(BuiltinModel):
         consts = neurochem.Constants(const_file)
         species_converter = SpeciesConverter(consts.species)
         aev_computer = AEVComputer(**consts)
-        energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
+        energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True, onnx_opset11=onnx_opset11)
         species_to_tensor = consts.species_to_tensor
         neural_networks = neurochem.load_model_ensemble(consts.species,
                                                         ensemble_prefix, ensemble_size, onnx_opset11)
