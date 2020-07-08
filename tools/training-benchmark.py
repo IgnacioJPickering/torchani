@@ -6,8 +6,6 @@ import argparse
 import pkbar
 from torchani.units import hartree2kcalmol
 
-synchronize = False
-
 H_network = torch.nn.Sequential(
     torch.nn.Linear(384, 160),
     torch.nn.CELU(0.1),
@@ -53,6 +51,8 @@ def time_func(key, func):
     timers[key] = 0
 
     def wrapper(*args, **kwargs):
+        if synchronize:
+            torch.cuda.synchronize()
         start = timeit.default_timer()
         ret = func(*args, **kwargs)
         if synchronize:
@@ -78,7 +78,7 @@ if __name__ == "__main__":
                         default=2560, type=int)
     parser.add_argument('-y', '--synchronize',
                         action='store_true',
-                        help='whether to insert torch.cuda.synchronize() at the end of each function')
+                        help='whether to insert torch.cuda.synchronize() at the start and end of each function')
     parser.add_argument('-n', '--num_epochs',
                         help='epochs',
                         default=1, type=int)
@@ -86,6 +86,13 @@ if __name__ == "__main__":
 
     if parser.synchronize:
         synchronize = True
+    else:
+        synchronize = False
+        print('WARNING: Synchronization creates some small overhead but if CUDA'
+              ' streams are not synchronized the timings before and after a'
+              ' function do not reflect the actual calculation load that'
+              ' function is performing. Only run this benchmark without'
+              ' synchronization if you know very well what you are doing')
 
     Rcr = 5.2000e+00
     Rca = 3.5000e+00
