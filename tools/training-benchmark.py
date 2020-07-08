@@ -5,7 +5,6 @@ import timeit
 import argparse
 import pkbar
 from torchani.units import hartree2kcalmol
-
 H_network = torch.nn.Sequential(
     torch.nn.Linear(384, 160),
     torch.nn.CELU(0.1),
@@ -64,6 +63,13 @@ def time_func(key, func):
     return wrapper
 
 
+def time_functions_in_module(module, function_names_list):
+    # Wrap all the functions from "function_names_list" from the module
+    # "module" with a timer
+    for n in function_names_list:
+        setattr(module, n, time_func(f'{module.__name__}.{n}', getattr(module, n)))
+
+
 if __name__ == "__main__":
     # parse command line arguments
     parser = argparse.ArgumentParser()
@@ -112,21 +118,19 @@ if __name__ == "__main__":
     timers = {}
 
     # enable timers
-    torchani.aev.cutoff_cosine = time_func('torchani.aev.cutoff_cosine', torchani.aev.cutoff_cosine)
-    torchani.aev.radial_terms = time_func('torchani.aev.radial_terms', torchani.aev.radial_terms)
-    torchani.aev.angular_terms = time_func('torchani.aev.angular_terms', torchani.aev.angular_terms)
-    torchani.aev.compute_shifts = time_func('torchani.aev.compute_shifts', torchani.aev.compute_shifts)
-    torchani.aev.neighbor_pairs = time_func('torchani.aev.neighbor_pairs', torchani.aev.neighbor_pairs)
-    torchani.aev.neighbor_pairs_nopbc = time_func('torchani.aev.neighbor_pairs_nopbc', torchani.aev.neighbor_pairs_nopbc)
-    torchani.aev.cumsum_from_zero = time_func('torchani.aev.cumsum_from_zero', torchani.aev.cumsum_from_zero)
-    torchani.aev.triple_by_molecule = time_func('torchani.aev.triple_by_molecule', torchani.aev.triple_by_molecule)
-    torchani.aev.compute_aev = time_func('torchani.aev.compute_aev', torchani.aev.compute_aev)
+    functions_to_time = ['cutoff_cosine', 'radial_terms', 'angular_terms',
+                         'compute_shifts', 'neighbor_pairs',
+                         'neighbor_pairs_nopbc', 'cumsum_from_zero',
+                         'triple_by_molecule', 'compute_aev']
+
+    time_functions_in_module(torchani.aev, functions_to_time)
+
     model[0].forward = time_func('total', model[0].forward)
     model[1].forward = time_func('forward', model[1].forward)
 
     print('=> loading dataset...')
     shifter = torchani.EnergyShifter(None)
-    dataset = list(torchani.data.load(parser.dataset_path).subtract_self_energies(shifter).species_to_indices().shuffle().collate(parser.batch_size))
+    dataset = torchani.data.load(parser.dataset_path).subtract_self_energies(shifter).species_to_indices().shuffle().collate(parser.batch_size).cache()
 
     print('=> start training')
     start = time.time()
