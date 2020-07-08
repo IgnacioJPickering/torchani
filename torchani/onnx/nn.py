@@ -8,7 +8,7 @@ from torchani.nn import SpeciesEnergies
 class EnergyShifterOnyx(torchani.utils.EnergyShifter):
 
     def __init__(self, self_energies=None, fit_intercept=False):
-        super().__init__()
+        torch.nn.Module.__init__(self)
 
         if self_energies is not None:
             self_energies = torch.tensor(self_energies, dtype=torch.double)
@@ -46,7 +46,7 @@ class EnergyShifterOnyx(torchani.utils.EnergyShifter):
 class ANIModelOnyx(torchani.nn.ANIModel):
 
     def __init__(self, modules):
-        super().__init__(self.ensureOrderedDict(modules))
+        torch.nn.ModuleDict.__init__(self, self.ensureOrderedDict(modules))
         # dummy buffer tensor to set devices and dtypes of dynamically created
         # float32/float64 tensors, which is necessary for onnx support, since
         # onnx.export doesn't support other.dtype / other.device when "other"
@@ -78,7 +78,7 @@ class ANIModelOnyx(torchani.nn.ANIModel):
 class EnsembleOnyx(torchani.nn.Ensemble):
 
     def __init__(self, modules):
-        super().__init__(modules)
+        torch.nn.ModuleList.__init__(self, modules)
         # size has to be explicitly registered as floating point to avoid
         # onnx.export interpreting it as an int
         self.register_buffer('size', torch.tensor(float(len(modules))))
@@ -102,16 +102,3 @@ class EnsembleOnyx(torchani.nn.Ensemble):
 
         average = average / self.size
         return SpeciesEnergies(species, average)
-
-
-class SequentialOnyx(torchani.nn.Sequential):
-
-    def __init__(self, *modules):
-        super().__init__(modules)
-
-    def forward(self, input_: Tuple[Tensor, Tensor],
-                cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None):
-        for module in self:
-            input_ = module(input_, cell=cell, pbc=pbc)
-        return input_

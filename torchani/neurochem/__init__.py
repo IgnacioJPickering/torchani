@@ -245,7 +245,7 @@ def load_atomic_network(filename, onnx_opset11=False):
             bfn, bsz = s['biases']
             if in_size * out_size != wsz or out_size != bsz:
                 raise ValueError('bad parameter shape')
-                layer = linear_class(in_size, out_size)
+            layer = linear_class(in_size, out_size)
             wfn = os.path.join(networ_dir, wfn)
             bfn = os.path.join(networ_dir, bfn)
             load_param_file(layer, in_size, out_size, wfn, bfn)
