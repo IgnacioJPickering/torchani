@@ -38,7 +38,7 @@ class TestAEVConstructor(unittest.TestCase):
             if isinstance(c, torch.Tensor):
                 self.assertTrue(torch.isclose(c, ca).all())
             else:
-                self.assertTrue(c == ca)
+                self.assertEqual(c, ca)
 
 
 class TestIsolated(unittest.TestCase):
