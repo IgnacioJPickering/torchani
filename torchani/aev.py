@@ -3,7 +3,7 @@ import torch
 from torch import Tensor
 import math
 from typing import Tuple, Optional, NamedTuple
-from torch.jit import Final
+# from torch.jit import Final
 
 
 class SpeciesAEV(NamedTuple):
@@ -339,18 +339,21 @@ class AEVComputer(torch.nn.Module):
     # TODO: Due to strange, hard to track bug associated with typing-extensions
     # 3.7.4.2 these two can't be set in these way. since onnx installs
     # typing-extensions as a requirement it fails
-    #Rcr: Final[float]
-    #Rca: Final[float]
-    __constants__ = ['Rcr', 'Rca']
+    # Rcr: Final[float]
+    # Rca: Final[float]
+    # num_species: Final[int]
 
-    num_species: Final[int]
+    # radial_sublength: Final[int]
+    # radial_length: Final[int]
+    # angular_sublength: Final[int]
+    # angular_length: Final[int]
+    # aev_length: Final[int]
+    # sizes: Final[Tuple[int, int, int, int, int]]
 
-    radial_sublength: Final[int]
-    radial_length: Final[int]
-    angular_sublength: Final[int]
-    angular_length: Final[int]
-    aev_length: Final[int]
-    sizes: Final[Tuple[int, int, int, int, int]]
+    __constants__ = ['Rcr', 'Rca', 'num_species', 'radial_length',
+                     'angular_sublength', 'angular_length', 'aev_length',
+                     'sizes']
+
 
     def __init__(self, Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species):
         super().__init__()
