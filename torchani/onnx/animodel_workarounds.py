@@ -1,7 +1,6 @@
 import torch
 import math
 from torch import Tensor
-from torch.jit import Final
 # workarounds for operations unsupported in onnx opset 11.  these functions
 # reproduce the needed behavior of aten operations by using operations in
 # opset 11 only
@@ -11,8 +10,7 @@ class Opset11Linear(torch.nn.Module):
     # essentially copied from torch.nn.Linear but simplified to avoid
     # possibility of bias being None which screws up graph, and
     # only accepts 2D inputs
-    in_features: Final[int]
-    out_features: Final[int]
+    __constants__ = ['in_features', 'out_features']
 
     def __init__(self, in_features: int, out_features: int, bias=True):
         assert bias, "This implementation of opset11 linear only accepts biased linear transforms"
@@ -40,7 +38,7 @@ class Opset11Linear(torch.nn.Module):
 
 
 class Opset11CELU(torch.nn.Module):
-    alpha: Final[float]
+    __constants__ = ['alpha']
 
     def __init__(self, alpha: float = 0.1):
         super().__init__()

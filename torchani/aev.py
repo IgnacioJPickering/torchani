@@ -336,8 +336,13 @@ class AEVComputer(torch.nn.Module):
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
-    Rcr: Final[float]
-    Rca: Final[float]
+    # TODO: Due to strange, hard to track bug associated with typing-extensions
+    # 3.7.4.2 these two can't be set in these way. since onnx installs
+    # typing-extensions as a requirement it fails
+    #Rcr: Final[float]
+    #Rca: Final[float]
+    __constants__ = ['Rcr', 'Rca']
+
     num_species: Final[int]
 
     radial_sublength: Final[int]
