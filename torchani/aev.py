@@ -419,7 +419,7 @@ class AEVComputer(torch.nn.Module):
 
         ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1]
 
-        return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfZ, ShfA, num_species)
+        return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
 
     def constants(self):
         return self.Rcr, self.EtaR, self.ShfR, self.Rca, self.ShfZ, self.EtaA, self.Zeta, self.ShfA
