@@ -391,7 +391,7 @@ class AEVComputer(torch.nn.Module):
     def cover_linearly(cls, radial_cutoff: float, angular_cutoff: float,
                        radial_eta: float, angular_eta: float,
                        radial_dist_divisions: int, angular_dist_divisions: int,
-                       cosine_power: float, angle_sections: int, num_species: int,
+                       zeta: float, angle_sections: int, num_species: int,
                        angular_start: float = 0.9, radial_start: float = 0.9):
         r""" Provides a convenient way to linearly fill cutoffs
 
@@ -411,7 +411,7 @@ class AEVComputer(torch.nn.Module):
         Rca = angular_cutoff
         EtaR = torch.tensor([float(radial_eta)])
         EtaA = torch.tensor([float(angular_eta)])
-        Zeta = torch.tensor([float(cosine_power)])
+        Zeta = torch.tensor([float(zeta)])
 
         ShfR = torch.linspace(radial_start, radial_cutoff, radial_dist_divisions + 1)[:-1]
         ShfA = torch.linspace(angular_start, angular_cutoff, angular_dist_divisions + 1)[:-1]

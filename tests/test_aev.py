@@ -28,7 +28,7 @@ class TestAEVConstructor(unittest.TestCase):
                         'angular_eta': 8.0,
                         'radial_dist_divisions': 16,
                         'angular_dist_divisions': 4,
-                        'cosine_power': 32.0,
+                        'zeta': 32.0,
                         'angle_sections': 8,
                         'num_species': 4}
         aev_computer_alt = torchani.AEVComputer.cover_linearly(**ani1x_values)
