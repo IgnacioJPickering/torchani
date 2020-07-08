@@ -91,6 +91,7 @@ import random
 from collections import Counter
 import numpy
 import gc
+from ..onnx import EnergyShifterOnyx
 
 PKBAR_INSTALLED = importlib.util.find_spec('pkbar') is not None  # type: ignore
 if PKBAR_INSTALLED:
@@ -157,7 +158,7 @@ class Transformations:
     def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None):
         intercept = 0.0
         shape_inference = False
-        if isinstance(self_energies, utils.EnergyShifter):
+        if isinstance(self_energies, [utils.EnergyShifter, EnergyShifterOnyx]):
             shape_inference = True
             shifter = self_energies
             self_energies = {}
@@ -195,7 +196,11 @@ class Transformations:
                 sae_ = sae[:-1]
             for s, e in zip(species, sae_):
                 self_energies[s] = e
-            shifter.__init__(sae, shifter.fit_intercept.item())
+            if isinstance(shifter, utils.EnergyShifter):
+                shifter.__init__(sae, shifter.fit_intercept)
+            else:
+                # for EnergyShifterOnyx this is a 1 element tensor
+                shifter.__init__(sae, shifter.fit_intercept.item())
         gc.collect()
 
         def reenterable_iterable_factory():
