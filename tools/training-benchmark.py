@@ -155,7 +155,7 @@ if __name__ == "__main__":
     print('=> more detail about benchmark')
     for k in timers:
         if k.startswith('torchani.'):
-            print('{} - {:.1f}s'.format(k, timers[k]))
-    print('Total AEV - {:.1f}s'.format(timers['total']))
-    print('NN - {:.1f}s'.format(timers['forward']))
-    print('Epoch time - {:.1f}s'.format(stop - start))
+            print('{} - {:.2f}s'.format(k, timers[k]))
+    print('Total AEV - {:.2f}s'.format(timers['total']))
+    print('NN - {:.2f}s'.format(timers['forward']))
+    print('Epoch time - {:.2f}s'.format(stop - start))
