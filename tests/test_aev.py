@@ -17,19 +17,19 @@ N = 97
 
 
 class TestAEVConstructor(unittest.TestCase):
-    # Test that checks that the friendly constructor 
+    # Test that checks that the friendly constructor
     # reproduces the values from ANI1x with the correct parameters
     def testCoverLinearly(self):
         consts = torchani.neurochem.Constants(const_file)
         aev_computer = torchani.AEVComputer(**consts)
-        ani1x_values = {'radial_cutoff': 5.2,  
-                        'angular_cutoff': 3.5, 
-                        'radial_eta': 16.0, 
-                        'angular_eta': 8.0, 
-                        'radial_dist_divisions': 16, 
-                        'angular_dist_divisions': 4, 
+        ani1x_values = {'radial_cutoff': 5.2,
+                        'angular_cutoff': 3.5,
+                        'radial_eta': 16.0,
+                        'angular_eta': 8.0,
+                        'radial_dist_divisions': 16,
+                        'angular_dist_divisions': 4,
                         'cosine_power': 32.0,
-                        'angle_sections': 8, 
+                        'angle_sections': 8,
                         'num_species': 4}
         aev_computer_alt = torchani.AEVComputer.cover_linearly(**ani1x_values)
         constants = aev_computer.constants()
