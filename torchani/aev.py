@@ -236,8 +236,8 @@ def triple_by_molecule(atom_index12: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
 
     # compute central_atom_index
     pair_sizes = counts * (counts - 1) // 2
-    pair_indices = torch.repeat_interleave(pair_sizes) #unsupported by opset11
-    #pair_indices = opset11_repeat_interleave(pair_sizes)
+    #pair_indices = torch.repeat_interleave(pair_sizes) #unsupported by opset11
+    pair_indices = opset11_repeat_interleave(pair_sizes)
     central_atom_index = uniqued_central_atom_index.index_select(0, pair_indices)
 
     # do local combinations within unique key, assuming sorted
