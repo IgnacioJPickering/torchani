@@ -183,7 +183,7 @@ class EnergyShifter(torch.nn.Module):
 
         if self.fit_intercept:
             return self_energies.sum(dim=1) + self.self_energies[-1]
-        return self_energies.sum(dim=1) 
+        return self_energies.sum(dim=1)
 
     def forward(self, species_energies: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,

@@ -65,7 +65,7 @@ class ANIModel(torch.nn.ModuleDict):
 
         output = torch.zeros(species_.shape, device=self.current_float.device, dtype=self.current_float.dtype)
 
-        for i, (_,m) in enumerate(self.items()):
+        for i, (_, m) in enumerate(self.items()):
             mask = (species_ == i)
             # onnx.export doesn't support flatten() in some contexts
             midx = mask.nonzero().view(-1)
@@ -83,7 +83,7 @@ class Ensemble(torch.nn.ModuleList):
 
     def __init__(self, modules):
         super().__init__(modules)
-        # size has to be explicitly registered as floating point to avoid 
+        # size has to be explicitly registered as floating point to avoid
         # onnx.export interpreting it as an int
         self.register_buffer('size', torch.tensor(float(len(modules))))
 
