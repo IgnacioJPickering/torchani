@@ -35,6 +35,13 @@ class ModelWrapper(torch.nn.Module):
 
 class ForcesModel(torch.nn.Module):
     # TensorRT does NOT have a builtin autograd
+    # There doesn't seem to be a way to make this work, either with 
+    # torch.autograd.grad or Tensor.backward(). Both cases fail since
+    # JIT fails for models that have autograd internally, and 
+    # both tracing and scripting need JIT
+    #
+    # only workaround seems to be writing down derivatives explicitly
+    #
     # TODO: check if this has any chance of working or is just fantasy
     # if ONNX doesn't have a builtin autograd something like this may be
     # necessary in order to calculate forces, this is a model that internally
@@ -43,8 +50,7 @@ class ForcesModel(torch.nn.Module):
         super().__init__()
         self.model = model
 
-    def forward(self, input_):
-        species, coordinates = input_
+    def forward(self, species, coordinates):
         energies = self.model((species, coordinates)).energies
         energies = energies.sum()
         forces = -torch.autograd.grad(energies, coordinates)[0]
@@ -98,11 +104,11 @@ class TestTraceONNX(unittest.TestCase):
         self.model = self.ensemble_model[0]
         self.prefix_for_onnx_files = ''
 
-    @unittest.skipIf(True, 'always')
+    @unittest.skipIf(True, 'skip')
     def testForces(self):
         forces_model = ForcesModel(self.model).to(self.device)
-        example_outputs = forces_model((self.species, self.coordiantes))
-        torch.onnx.export(forces_model, ((self.species, self.coordinates), ),
+        example_outputs = forces_model(self.species, self.coordinates)
+        torch.onnx.export(forces_model, (self.species, self.coordinates ),
                           f'{self.prefix_for_onnx_files}forces_model.onnx',
                           verbose=True,
                           opset_version=11,
@@ -116,7 +122,7 @@ class TestTraceONNX(unittest.TestCase):
         # currently only checks gross RuntimeErrors when tracing
         ani1x = self.model
         aev_computer = ani1x.aev_computer
-        example_outputs = aev_computer((self.species, self.coordiantes))
+        example_outputs = aev_computer((self.species, self.coordinates))
         torch.onnx.export(aev_computer, ((self.species, self.coordinates), ),
                           f'{self.prefix_for_onnx_files}aev_computer.onnx',
                           verbose=True,
@@ -239,7 +245,7 @@ class TestTraceONNX(unittest.TestCase):
                           input_names=input_names,
                           output_names=output_names,
                           dynamic_axes=dynamic_axes,
-                          verbose=True,
+                          #verbose=True,
                           example_outputs=example_outputs,
                           opset_version=11)
         return example_outputs
