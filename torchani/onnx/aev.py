@@ -3,6 +3,7 @@ import torch
 from torch import Tensor
 import math
 from typing import Tuple, Optional, NamedTuple
+from torchani.aev import AEVComputer
 
 class SpeciesAEV(NamedTuple):
     species: Tensor
@@ -57,7 +58,7 @@ class AEVComputerOnyx(torch.nn.Module):
         self.aev_length = self.radial_length + self.angular_length
         self.sizes = self.num_species, self.radial_sublength, self.radial_length, self.angular_sublength, self.angular_length
 
-        self.register_buffer('triu_index', AEVComputerOnyx.triu_index(num_species).to(device=self.EtaR.device))
+        self.register_buffer('triu_index', AEVComputerOnyx.get_triu_index(num_species).to(device=self.EtaR.device))
 
         # Set up default cell and compute default shifts.
         # These values are used when cell and pbc switch are not given.
@@ -209,7 +210,7 @@ class AEVComputerOnyx(torch.nn.Module):
         species12_ = torch.where(sign12 == 1, species12_small[1], species12_small[0])
         angular_terms_ = AEVComputerOnyx.angular_terms(Rca, ShfZ, EtaA, Zeta, ShfA, vec12)
         angular_aev = angular_terms_.new_zeros((num_molecules * num_atoms * num_species_pairs, angular_sublength))
-        index = central_atom_index * num_species_pairs + AEVComputerOnyx.triu_index[species12_[0], species12_[1]]
+        index = central_atom_index * num_species_pairs + triu_index[species12_[0], species12_[1]]
         angular_aev.index_add_(0, index, angular_terms_)
         angular_aev = angular_aev.reshape(num_molecules, num_atoms, angular_length)
         return torch.cat([radial_aev, angular_aev], dim=-1)
@@ -450,7 +451,7 @@ class AEVComputerOnyx(torch.nn.Module):
         return cumsum
 
     @staticmethod
-    def triu_index(num_species: int) -> Tensor:
+    def get_triu_index(num_species: int) -> Tensor:
         species1, species2 = torch.triu_indices(num_species, num_species).unbind(0)
         pair_index = torch.arange(species1.shape[0], dtype=torch.long)
         ret = torch.zeros(num_species, num_species, dtype=torch.long)
@@ -458,3 +459,12 @@ class AEVComputerOnyx(torch.nn.Module):
         ret[species2, species1] = pair_index
         return ret
 
+if __name__ == '__main__':
+    coords = torch.ones((1, 10, 3), dtype=torch.float).cumsum(1)
+    species = torch.zeros((1, 10), dtype=torch.long)
+
+    aev_onyx = AEVComputerOnyx.cover_linearly(5.2, 3.5, 16.0, 8.0, 16, 4, 32.0, 8, 4)
+    aev = AEVComputer.cover_linearly(5.2, 3.5, 16.0, 8.0, 16, 4, 32.0, 8, 4)
+    aevs = aev((species, coords)).aevs
+    aevs_onyx = aev_onyx((species, coords)).aevs
+    assert torch.isclose(aevs, aevs_onyx).all().item()
