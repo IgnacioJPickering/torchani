@@ -56,6 +56,7 @@ class BuiltinModel(torch.nn.Module):
     @classmethod
     def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False, model_index=0, onnx_opset11=False):
         from . import neurochem  # noqa
+        from torchani.onnx import AEVComputerOnyx
 
         # this is used to load only 1 model (by default model 0)
         const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
@@ -64,7 +65,12 @@ class BuiltinModel(torch.nn.Module):
 
         consts = neurochem.Constants(const_file)
         species_converter = SpeciesConverter(consts.species)
-        aev_computer = AEVComputer(**consts)
+
+        if onnx_opset11:
+            aev_computer = AEVComputerOnyx(**consts)
+        else:
+            aev_computer = AEVComputer(**consts)
+
         energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True, onnx_opset11=onnx_opset11)
         species_to_tensor = consts.species_to_tensor
 
@@ -176,13 +182,19 @@ class BuiltinEnsemble(BuiltinModel):
     @classmethod
     def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False, onnx_opset11=False):
         from . import neurochem  # noqa
+        from torchani.onnx import AEVComputerOnyx
 
         # this is used to load only 1 model (by default model 0)
         const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
 
         consts = neurochem.Constants(const_file)
         species_converter = SpeciesConverter(consts.species)
-        aev_computer = AEVComputer(**consts)
+
+        if onnx_opset11:
+            aev_computer = AEVComputerOnyx(**consts)
+        else:
+            aev_computer = AEVComputer(**consts)
+
         energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True, onnx_opset11=onnx_opset11)
         species_to_tensor = consts.species_to_tensor
         neural_networks = neurochem.load_model_ensemble(consts.species,

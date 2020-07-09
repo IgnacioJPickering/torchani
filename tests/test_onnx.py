@@ -11,6 +11,7 @@ import onnx
 # Microsoft backend used to validate runtime forward passes of exported models
 import onnxruntime as ort
 
+
 #  current unsupported aten operators in opset 12 (ONNX 1.7.0):
 # -torch.Tensor.index_add
 # -torch.Tensor.unique_consecutive
@@ -33,28 +34,28 @@ class ModelWrapper(torch.nn.Module):
         return out
 
 
-class ForcesModel(torch.nn.Module):
-    # TensorRT does NOT have a builtin autograd
-    # There doesn't seem to be a way to make this work, either with 
-    # torch.autograd.grad or Tensor.backward(). Both cases fail since
-    # JIT fails for models that have autograd internally, and 
-    # both tracing and scripting need JIT
-    #
-    # only workaround seems to be writing down derivatives explicitly
-    #
-    # TODO: check if this has any chance of working or is just fantasy
-    # if ONNX doesn't have a builtin autograd something like this may be
-    # necessary in order to calculate forces, this is a model that internally
-    # performs autograd inside forward, although I suspect this will not work
-    def __init__(self, model):
-        super().__init__()
-        self.model = model
-
-    def forward(self, species, coordinates):
-        energies = self.model((species, coordinates)).energies
-        energies = energies.sum()
-        forces = -torch.autograd.grad(energies, coordinates)[0]
-        return forces
+#class ForcesModel(torch.nn.Module):
+#    # TensorRT does NOT have a builtin autograd
+#    # There doesn't seem to be a way to make this work, either with 
+#    # torch.autograd.grad or Tensor.backward(). Both cases fail since
+#    # JIT fails for models that have autograd internally, and 
+#    # both tracing and scripting need JIT
+#    #
+#    # only workaround seems to be writing down derivatives explicitly
+#    #
+#    # TODO: check if this has any chance of working or is just fantasy
+#    # if ONNX doesn't have a builtin autograd something like this may be
+#    # necessary in order to calculate forces, this is a model that internally
+#    # performs autograd inside forward, although I suspect this will not work
+#    def __init__(self, model):
+#        super().__init__()
+#        self.model = model
+#
+#    def forward(self, species, coordinates):
+#        energies = self.model((species, coordinates)).energies
+#        energies = energies.sum()
+#        forces = -torch.autograd.grad(energies, coordinates)[0]
+#        return forces
 
 
 class TestTraceONNX(unittest.TestCase):
@@ -104,32 +105,13 @@ class TestTraceONNX(unittest.TestCase):
         self.model = self.ensemble_model[0]
         self.prefix_for_onnx_files = ''
 
-    @unittest.skipIf(True, 'skip')
-    def testForces(self):
-        forces_model = ForcesModel(self.model).to(self.device)
-        example_outputs = forces_model(self.species, self.coordinates)
-        torch.onnx.export(forces_model, (self.species, self.coordinates ),
-                          f'{self.prefix_for_onnx_files}forces_model.onnx',
-                          verbose=True,
-                          opset_version=11,
-                          example_outputs=example_outputs,
-                          operator_export_type=torch.onnx.OperatorExportTypes.
-                          ONNX_ATEN_FALLBACK)
-
-    @unittest.skipIf(True, 'skip')
     def testAEVComputer(self):
         # checks if AEVComputer() is onnx-traceable
         # currently only checks gross RuntimeErrors when tracing
-        ani1x = self.model
-        aev_computer = ani1x.aev_computer
-        example_outputs = aev_computer((self.species, self.coordinates))
-        torch.onnx.export(aev_computer, ((self.species, self.coordinates), ),
-                          f'{self.prefix_for_onnx_files}aev_computer.onnx',
-                          verbose=True,
-                          example_outputs=example_outputs,
-                          opset_version=11,
-                          operator_export_type=torch.onnx.OperatorExportTypes.
-                          ONNX_ATEN_FALLBACK)
+        # currently the trace seems to work but ONNX checking of the graph
+        # fails on a "cpu" constant this is probably due to the ATEN operators
+        aev_computer = ModelWrapper(self.model.aev_computer)
+        self._testAEVComputer(aev_computer, 'aev_computer')
 
     def testEnergyShifter(self):
         energy_shifter = ModelWrapper(self.model.energy_shifter)
@@ -150,6 +132,38 @@ class TestTraceONNX(unittest.TestCase):
     def testEnsemble(self):
         nn_module = ModelWrapper(self.ensemble_model.neural_networks)
         self._testNNModuleCommon(nn_module, 'ensemble')
+
+    def _testAEVComputer(self, module, name):
+        # This function is used to test both torchani.EnergyShifter
+        # module must already be wrapped
+        input_names = ['species', 'coordinates']
+        output_names = ['aevs']
+        # C : conformations (batch dimension), A : atoms, G : AEV
+        dynamic_axes = {
+            input_names[0]: {
+                0: 'C',
+                1: 'A'
+            },
+            input_names[1]: {
+                0: 'C', 
+                1: 'A'
+            },
+            output_names[0]: {
+                0: 'C', 
+                1: 'A', 
+                2: 'G'
+            }
+        }
+        onnx_file_name = f'{self.prefix_for_onnx_files}{name}.onnx'
+        example_outputs = self._testExportModel(module, input_names,
+                                                output_names, dynamic_axes,
+                                                onnx_file_name,
+                                                (self.species, self.coordinates), fallback=True)
+        self._testONNXGraph(onnx_file_name)
+        self._testONNXRuntime(self.np_species, self.np_coordinates, onnx_file_name,
+                              example_outputs)
+        # remove created onnx file to avoid polluting the tests tree
+        os.unlink(onnx_file_name)
 
     def _testEnergyShifter(self, module, name):
         # This function is used to test both torchani.EnergyShifter
@@ -233,21 +247,33 @@ class TestTraceONNX(unittest.TestCase):
         return energies, np_energies
 
     def _testExportModel(self, module, input_names, output_names, dynamic_axes,
-                         onnx_file_name, inputs_):
+                         onnx_file_name, inputs_, fallback=False):
         species, other_input = inputs_
         example_outputs = module(species, other_input)
         # names are added to inputs and parameters only for easier
         # understanding of the resulting onnx graph
         for k, p in module.named_parameters():
             input_names.append(k)
-        torch.onnx.export(module, (species, other_input),
-                          onnx_file_name,
-                          input_names=input_names,
-                          output_names=output_names,
-                          dynamic_axes=dynamic_axes,
-                          #verbose=True,
-                          example_outputs=example_outputs,
-                          opset_version=11)
+        if fallback:
+            torch.onnx.export(module, (species, other_input),
+                              onnx_file_name,
+                              input_names=input_names,
+                              output_names=output_names,
+                              dynamic_axes=dynamic_axes,
+                              verbose=True,
+                              example_outputs=example_outputs,
+                              opset_version=11, 
+                              operator_export_type=torch.onnx.OperatorExportTypes.
+                              ONNX_ATEN_FALLBACK)
+        else:
+            torch.onnx.export(module, (species, other_input),
+                              onnx_file_name,
+                              input_names=input_names,
+                              output_names=output_names,
+                              dynamic_axes=dynamic_axes,
+                              #verbose=True,
+                              example_outputs=example_outputs,
+                              opset_version=11)
         return example_outputs
 
     @staticmethod
@@ -304,6 +330,16 @@ class TestScriptModuleONNX(TestTraceONNX):
         energy_shifter = ModelWrapper(self.model.energy_shifter)
         energy_shifter = torch.jit.script(energy_shifter)
         self._testEnergyShifter(energy_shifter, 'energy_shifter')
+
+    def testAEVComputer(self):
+        # checks if AEVComputer() is onnx-traceable
+        # currently only checks gross RuntimeErrors when tracing
+        # currently fails probably due to the ATen operators
+        # but for some reason the graph is checked correctly on the 
+        # scriptmodule
+        aev_computer = ModelWrapper(self.model.aev_computer)
+        aev_computer = torch.jit.script(aev_computer)
+        self._testAEVComputer(aev_computer, 'aev_computer')
 
 
 if __name__ == '__main__':
