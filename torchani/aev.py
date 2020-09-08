@@ -187,7 +187,7 @@ def neighbor_pairs_nopbc(padding_mask: Tensor, coordinates: Tensor, cutoff: floa
         padding_mask (:class:`torch.Tensor`): boolean tensor of shape
             (molecules, atoms) for padding mask. 1 == is padding.
         coordinates (:class:`torch.Tensor`): tensor of shape
-            (molecules * atoms, 3) for atom coordinates.
+            (molecules, atoms, 3) for atom coordinates.
         cutoff (float): the cutoff inside which atoms are considered pairs
     """
     coordinates = coordinates.detach()
@@ -474,6 +474,7 @@ class AEVComputer(torch.nn.Module):
             unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length())``
         """
         species, coordinates = input_
+        assert species.shape == coordinates.shape[:-1]
 
         if cell is None and pbc is None:
             aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes, None)
