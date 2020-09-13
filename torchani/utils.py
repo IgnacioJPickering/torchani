@@ -7,6 +7,22 @@ from typing import Tuple, NamedTuple, Optional
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 
+def get_center_of_geometry(coordinates):
+    return coordinates.sum(dim=0)/coordinates.shape[1]
+
+def get_bounding_box_and_displace(coordinates, extra_space=1):
+    # get a bounding box with a given extra space in the x, y and z directions
+    # only valid for single molecules
+    assert coordinates.shape[0] == 1
+    coordinates = coordinates.squeeze(0)
+    # center the coordinates in the center of mass, assuming
+    # all atoms have equal mass
+    #coordinates = coordinates - get_cog(coordinates)
+    maxs = torch.max(coordinates, dim=0).values
+    mins = torch.min(coordinates, dim=0).values
+    coordinates = coordinates - mins + extra_space
+    box = torch.diagflat(maxs + 2 * extra_space)
+    return box, coordinates.unsqueeze(0)
 
 def stack_with_padding(properties, padding):
     output = defaultdict(list)
