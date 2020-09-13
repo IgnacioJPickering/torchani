@@ -440,4 +440,4 @@ PERIODIC_TABLE = """
 
 __all__ = ['pad_atomic_properties', 'present_species', 'hessian',
            'vibrational_analysis', 'strip_redundant_padding',
-           'ChemicalSymbolsToInts', 'get_atomic_masses']
+           'ChemicalSymbolsToInts', 'get_atomic_masses', 'get_bounding_box_and_displace']
