@@ -7,10 +7,30 @@ from typing import Tuple, NamedTuple, Optional
 from torchani.units import sqrt_mhessian2invcm, sqrt_mhessian2milliev, mhessian2fconst
 from .nn import SpeciesEnergies
 
+def size_in_mb(tensor):
+    return (tensor.element_size() * tensor.nelement())/1000/1000
+
+def tile_into_cube(species_coordinates, box_length=3.5, repeats=3, noise=None):
+    # convenience function that takes a molecule and tiles it
+    # into a periodic square crystal cell
+    species, coordinates = species_coordinates
+    assert species.device == coordinates.device
+    device = species.device
+
+    x_disp, y_disp, z_disp = (torch.eye(3, device=device)*box_length).unbind(0)
+    x_disp = torch.arange(0, repeats, device=device) * box_length
+    displacements = torch.cartesian_prod(x_disp, x_disp, x_disp)
+    num_displacements = len(displacements)
+    species = species.repeat(1, num_displacements)
+    coordinates = torch.cat([coordinates + d for d in displacements], dim=1)
+    if noise is not None:
+        coordinates += torch.empty(coordinates.shape, device=device).uniform_(-noise, noise)
+    return species, coordinates
+
 def get_center_of_geometry(coordinates):
     return coordinates.sum(dim=0)/coordinates.shape[1]
 
-def get_bounding_box_and_displace(coordinates, extra_space=1):
+def get_bounding_box_and_displace(coordinates, extra_space=1, square=False):
     # get a bounding box with a given extra space in the x, y and z directions
     # only valid for single molecules
     assert coordinates.shape[0] == 1
@@ -20,8 +40,16 @@ def get_bounding_box_and_displace(coordinates, extra_space=1):
     #coordinates = coordinates - get_cog(coordinates)
     maxs = torch.max(coordinates, dim=0).values
     mins = torch.min(coordinates, dim=0).values
+    if square:
+        # make the box into the minimum large square that fits the requirements
+        mins = mins.min().repeat(3)
+        maxs = maxs.max().repeat(3)
+    
     coordinates = coordinates - mins + extra_space
     box = torch.diagflat(maxs + 2 * extra_space)
+
+
+
     return box, coordinates.unsqueeze(0)
 
 def stack_with_padding(properties, padding):
