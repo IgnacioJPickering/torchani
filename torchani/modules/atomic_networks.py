@@ -1,6 +1,6 @@
 """Contains different versions of the main ANIModel module"""
 import torch
-from .residual import ResidualBlock
+from .residual_blocks import ResidualBlock
 
 
 class AtomicNetworkClassic(torch.nn.Module):
@@ -39,17 +39,20 @@ class AtomicNetworkClassic(torch.nn.Module):
         if mean_aev is not None:
             assert isinstance(mean_aev, float)
             mean_aev = torch.tensor(mean_aev, dtype=torch.float)
-        self.register_buffer('mean_aev',
-                             torch.tensor(mean_aev, dtype=torch.float))
+        self.register_buffer('mean_aev', mean_aev)
 
         if std_aev is not None:
             assert isinstance(std_aev, float)
             std_aev = torch.tensor(std_aev, dtype=torch.float)
-        self.register_buffer('std_aev', torch.tensor(std_aev,
-                                                     dtype=torch.float))
+        self.register_buffer('std_aev', std_aev)
 
         assert isinstance(factor, float)
-        self.factor = torch.tensor(factor, dtype=torch.float)
+        factor = torch.tensor(factor, dtype=torch.float)
+        self.register_buffer('factor', factor)
+
+    @classmethod
+    def like_ani1x(cls):
+        return cls(dim_in=384, dim_out1=160, dim_out2=128, dim_out3=96, final_layer_bias=True)
 
     def forward(self, x):
         if self.mean_aev is not None and self.std_aev is not None:
@@ -72,8 +75,9 @@ class AtomicNetworkResidual(torch.nn.Module):
                  factor=1.):
         super().__init__()
         assert isinstance(factor, float)
+        factor = torch.tensor(factor, dtype=torch.float) 
+        self.register_buffer('factor', factor)
 
-        self.register_buffer('factor', torch.tensor(factor, dtype=torch.float))
         self.residual1 = ResidualBlock(dim_in,
                                        dim_out=dim_out1,
                                        celu_alpha=celu_alpha,
@@ -159,24 +163,26 @@ class AtomicNetworkFlexMultiple(torch.nn.Module):
         # afterwards to get multiple outputs "in parallel" (but they are not
         # parallelized)
 
-        self.residual_list = torch.nn.ModuleList([
+        residuals_shared = (
             ResidualBlock(dims[j],
                           dims[j + 1],
                           celu_alpha=celu_alpha,
                           batch_norm=batch_norm) for j in range(len(dims) - 1)
-        ])
-        self.outputs_list = torch.nn.ModuleList([
+            )
+        self.residuals_shared = torch.nn.Sequential(*residuals_shared)
+
+        distinct = [
             torch.nn.Linear(dims[-1], 1, bias=False)
             for _ in range(number_outputs)
-        ])
+        ]
+        self.distinct = torch.nn.Modulelist(distinct)
+
 
     def forward(self, x):
-        out = x
         # sequentially apply the residual blocks
-        for r in self.residual_list:
-            out = r(out)
-
-        outputs = [m(out) * f for m, f in zip(self.outputs_list, self.factors)]
+        out = self.residuals_shared(x)
+        # apply distinct non shared weights in a parallelizable loop
+        outputs = [m(out) * f for m, f in zip(self.distinct, self.factors)]
         outputs = torch.cat(outputs, dim=-1)
         return outputs
 
@@ -186,47 +192,66 @@ class AtomicNetworkSpecFlexMultiple(torch.nn.Module):
 
     # basically this is the one I want to use, the other ones are way too simple
     def __init__(self,
-                 dims_shared=[384, 192, 96],
-                 dims_specific=[96, 96, 96],
+                 dim_in=384, 
+                 dims_shared=[192, 96], # 2 shared layers, these are the OUTPUT dimensions
+                 dims_specific=[96, 96],  # 2 specific layers, these are the OUTPUT dimensions
                  celu_alpha=0.1,
                  number_outputs=1,
                  batch_norm=False,
                  factors=None):
         super().__init__()
 
+        # make dimensions match automatically, insert the input dimension as 
+        # first dimension of the shared layers, and the last dimension of the 
+        # shared layers as the first dimension of the specific layers
+        dims_shared.insert(0, dim_in)
+        if dims_specific:
+            dims_specific.insert(0, dims_shared[-1])
+
+
+        # if dims_specific is empty then the specific layer is just one linear
+        # layer, which amounts to vector dot product, or multiplying all
+        # outputs by one big matrix
+
         # get factors or ones
         if factors is None:
-            factors = torch.tensor([1.] * number_outputs)
+            factors = torch.tensor([1.] * number_outputs, dtype=torch.float)
         else:
             factors = torch.tensor(factors)
         self.register_buffer('factors', factors)
         assert len(self.factors) == number_outputs
 
-        # shared layers
-        residuals_shared = []
-        for j in range(len(dims_shared) - 1):
-            residuals_shared.append(
-                ResidualBlock(dims_shared[j],
-                              dims_shared[j + 1],
-                              batch_norm=batch_norm))
-        # this is just a sequential of shared layers
+        range_shared = range(len(dims_shared) - 1)
+        range_specific = range(len(dims_specific) - 1)
+
+        # shared layers get put into a Sequential module
+        residuals_shared = (
+            ResidualBlock(dims_shared[j],
+                          dims_shared[j + 1],
+                          celu_alpha=celu_alpha,
+                          batch_norm=batch_norm) for j in range_shared)
         self.residuals_shared = torch.nn.Sequential(*residuals_shared)
 
         # specific layers
         output_modules = []
         for j in range(number_outputs):
-            residuals_specific = []
-            for j in range(len(dims_specific) - 1):
-                residuals_specific.append(
-                    ResidualBlock(dims_specific[j],
-                                  dims_specific[j + 1],
-                                  batch_norm=batch_norm))
+            if dims_specific:
+                residuals_specific = [
+                        ResidualBlock(dims_specific[j],
+                                      dims_specific[j + 1],
+                                      batch_norm=batch_norm) for j in range_specific
+                        ]
+                residuals_specific.append(torch.nn.Linear(dims_specific[-1], 1, bias=False))
+            else:
+                residuals_specific = [torch.nn.Linear(dims_shared[-1], 1, bias=False)]
             # the last one is always a linear layer that ends on 1
-            residuals_specific = torch.nn.Sequential(
-                *residuals_specific,
-                torch.nn.Linear(dims_specific[-1], 1, bias=False))
+
+            # turn into a sequential and append to output modules
+            residuals_specific = torch.nn.Sequential(*residuals_specific)
             output_modules.append(residuals_specific)
-        # list of sequentials of specific layers
+
+        # turn output_modules into a correctly registered list of modules
+        # to be applied in a loop
         self.output_modules = torch.nn.ModuleList(output_modules)
 
     def forward(self, x):
@@ -236,5 +261,6 @@ class AtomicNetworkSpecFlexMultiple(torch.nn.Module):
         outputs = [
             m(out) * f for m, f in zip(self.output_modules, self.factors)
         ]
+        # combine all outputs into one
         outputs = torch.cat(outputs, dim=-1)
         return outputs

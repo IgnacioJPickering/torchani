@@ -20,6 +20,8 @@ class SpeciesSplitAEV(NamedTuple):
 
 class AEVComputerSplit(AEVComputer):
     r"""AEV Computer that splits the final aev into correctly shaped radial and angular parts
+
+    Useful for different refinement of angular and radial subsections of the AEV
     """
     Rcr: Final[float]
     Rca: Final[float]
@@ -47,14 +49,20 @@ class AEVComputerSplit(AEVComputer):
             cutoff = max(self.Rcr, self.Rca)
             shifts = compute_shifts(cell, pbc, cutoff)
             aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes, (cell, shifts))
+        radial_aev, angular_aev = torch.split(aev, [self.radial_length, self.angular_length], dim=-1)
+        num_species_pairs = (((self.num_species + 1) * (self.num_species))//2)
+        angular_dist_divisions = len(self.ShfA)
+        radial_dist_divisions = len(self.ShfR)
+        angle_sections = len(self.ShfZ)
 
-        radial_aev, angular_aev = torch.split(aev, [self.radial_length, self.angular_length])
-        assert len(radial_aev) + len(angular_aev) == self.aev_length
-        assert len(radial_aev)//self.num_species == self.radial_sublength
-        assert len(angular_aev)//(((self.num_species + 1) * (self.num_species))//2) == self.angular_sublength
+        assert radial_aev.shape[-1] + angular_aev.shape[-1] == self.aev_length
+        assert radial_aev.shape[-1]//self.num_species == self.radial_sublength
+        assert angular_aev.shape[-1]//num_species_pairs == self.angular_sublength
         # here I split the AEV and resize it so that it has some logical size
         # shape
-        radial_aev = radial_aev.reshape(-1, 4, 16) #(species, radial value)
-        angular_aev = angular_aev.reshape(-1, 10, 4, 8) #(species_pairs, radial_value, angular_value)
+        # for ani1x this is -1, 4, 16 for radial and -1 10, 4, 8 for angular
+        # first dimension is batch dimension
+        radial_aev = radial_aev.reshape(-1, self.num_species, radial_dist_divisions) #(species, radial value)
+        angular_aev = angular_aev.reshape(-1, num_species_pairs, angular_dist_divisions, angle_sections) #(species_pairs, radial_value, angular_value)
 
         return SpeciesSplitAEV(species, radial_aev, angular_aev)
