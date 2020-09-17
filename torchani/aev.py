@@ -429,6 +429,10 @@ class AEVComputer(torch.nn.Module):
 
         return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
 
+    @classmethod
+    def like_ani1x(cls):
+        return cls.cover_linearly(5.2, 3.5, 16.0, 8.0, 16, 4, 32.0, 8, 4)
+
     def constants(self):
         return self.Rcr, self.EtaR, self.ShfR, self.Rca, self.ShfZ, self.EtaA, self.Zeta, self.ShfA
 
