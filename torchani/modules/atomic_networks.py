@@ -2,31 +2,31 @@
 import torch
 from .residual_blocks import ResidualBlock
 
+class Normalizer(torch.nn.Module):
+
+    def __init__(self, mean=0., std=1.):
+        super().__init__()
+        assert isinstance(mean, float)
+        assert isinstance(std, float)
+        self.register_buffer('std', torch.tensor(std, dtype=torch.float))
+        self.register_buffer('mean', torch.tensor(mean, dtype=torch.float))
+
+    def forward(self, x):
+        return (x - self.mean) / self.std
+
 
 class AtomicNetworkClassic(torch.nn.Module):
     """Classic ANI style atomic network"""
     def __init__(self,
                  dim_in,
-                 dim_out1,
-                 dim_out2,
-                 dim_out3,
+                 dims, 
                  activation=None,
-                 mean_aev=None,
-                 std_aev=None,
+                 mean_aev=0.,
+                 std_aev=1.,
                  factor=1.,
                  final_layer_bias=False,
                  other_layers_bias=True):
         super().__init__()
-        self.linear1 = torch.nn.Linear(dim_in,
-                                       dim_out1,
-                                       bias=other_layers_bias)
-        self.linear2 = torch.nn.Linear(dim_out1,
-                                       dim_out2,
-                                       bias=other_layers_bias)
-        self.linear3 = torch.nn.Linear(dim_out2,
-                                       dim_out3,
-                                       bias=other_layers_bias)
-        self.linear4 = torch.nn.Linear(dim_out3, 1, bias=final_layer_bias)
 
         # activation can be custom or CELU
         if activation is not None:
@@ -34,34 +34,59 @@ class AtomicNetworkClassic(torch.nn.Module):
         else:
             self.a = torch.nn.CELU(0.1)
 
+        # automatically insert the first dimension
+        dims.insert(0, dim_in)
+        dimensions = range(len(dims) - 1)
+        layers = []
+        for j in dimensions:
+            layers.append(torch.nn.Linear(dims[j], dims[j+1], bias=other_layers_bias))
+            layers.append(self.a)
+        # final layer is always appended
+        layers.append(torch.nn.Linear(dims[-1], 1, bias=final_layer_bias))
+        self.sequential = torch.nn.Sequential(*layers)
+
         # the inputs can be standarized if needed, with the mean and standard
         # deviation of the aev
-        if mean_aev is not None:
-            assert isinstance(mean_aev, float)
-            mean_aev = torch.tensor(mean_aev, dtype=torch.float)
-        self.register_buffer('mean_aev', mean_aev)
-
-        if std_aev is not None:
-            assert isinstance(std_aev, float)
-            std_aev = torch.tensor(std_aev, dtype=torch.float)
-        self.register_buffer('std_aev', std_aev)
+        self.normalizer = Normalizer(mean_aev, std_aev)
 
         assert isinstance(factor, float)
         factor = torch.tensor(factor, dtype=torch.float)
         self.register_buffer('factor', factor)
 
     @classmethod
-    def like_ani1x(cls):
-        return cls(dim_in=384, dim_out1=160, dim_out2=128, dim_out3=96, final_layer_bias=True)
+    def like_ani1x(cls, atom):
+        args_for_atoms = {
+                'H' : {'dim_in' : 384, 'dims': [160, 128, 96] }, 
+                'C' : {'dim_in' : 384, 'dims': [144, 112, 96] }, 
+                'N' : {'dim_in' : 384, 'dims': [128, 112, 96] }, 
+                'O' : {'dim_in' : 384, 'dims': [128, 112, 96] }, 
+                }
+        return cls(**args_for_atoms[atom], final_layer_bias=True)
+
+    @classmethod
+    def like_ani1ccx(cls, atom='H'):
+        #this is just a synonym 
+        return cls.like_ani1x(atom)
+
+    @classmethod
+    def like_ani2x(cls, atom='H'):
+        args_for_atoms = {
+                'H' : {'dim_in' : 1008, 'dims': [256, 192, 160] }, 
+                'C' : {'dim_in' : 1008, 'dims': [224, 192, 160] }, 
+                'N' : {'dim_in' : 1008, 'dims': [192, 160, 128] }, 
+                'O' : {'dim_in' : 1008, 'dims': [192, 160, 128] }, 
+                'S' : {'dim_in' : 1008, 'dims': [160, 128, 96] }, 
+                'F' : {'dim_in' : 1008, 'dims': [160, 128, 96] }, 
+                'Cl': {'dim_in' : 1008, 'dims': [160, 128, 96] }, 
+                }
+        return cls(**args_for_atoms[atom], final_layer_bias=True)
+
 
     def forward(self, x):
-        if self.mean_aev is not None and self.std_aev is not None:
-            x = (x - self.mean_aev) / self.std_aev
-        out = self.a(self.linear1(x))
-        out = self.a(self.linear2(out))
-        out = self.a(self.linear3(out))
-        out = self.linear4(out)
-        return out * self.factor
+        out = self.normalizer(x)
+        out = self.sequential(x) 
+        out = out * self.factor
+        return out
 
 
 class AtomicNetworkResidual(torch.nn.Module):
