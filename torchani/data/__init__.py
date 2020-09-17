@@ -84,6 +84,7 @@ from os.path import join, isfile, isdir
 import os
 from ._pyanitools import anidataloader
 from .. import utils
+from .. import modules
 import importlib
 import functools
 import math
@@ -154,10 +155,12 @@ class Transformations:
             return IterableAdapter(reenterable_iterable_factory)
 
     @staticmethod
-    def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None):
+    def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None, fit_intercept=False):
         intercept = 0.0
         shape_inference = False
-        if isinstance(self_energies, utils.EnergyShifter):
+        if isinstance(self_energies, [utils.EnergyShifter, modules.EnergyShifter]):
+            if isinstance(self_energies, utils.EnergyShifter):
+                fit_intercept = self_energies.fit_intercept
             shape_inference = True
             shifter = self_energies
             self_energies = {}
@@ -184,18 +187,21 @@ class Transformations:
             species = sorted(list(counts.keys()), key=lambda x: species_order.index(x))
 
             X = [counts[s] for s in species]
-            if shifter.fit_intercept:
+            if fit_intercept:
                 X.append([1] * n)
             X = numpy.array(X).transpose()
             Y = numpy.array(Y)
             sae, _, _, _ = numpy.linalg.lstsq(X, Y, rcond=None)
             sae_ = sae
-            if shifter.fit_intercept:
+            if fit_intercept:
                 intercept = sae[-1]
                 sae_ = sae[:-1]
             for s, e in zip(species, sae_):
                 self_energies[s] = e
-            shifter.__init__(sae, shifter.fit_intercept)
+            if isinstance(shifter, utils.EnergyShifter):
+                shifter.__init__(sae, shifter.fit_intercept)
+            else:
+                shifter.__init__(self_energies=sae[:-1], intercept=sae[-1])
         gc.collect()
 
         def reenterable_iterable_factory():
