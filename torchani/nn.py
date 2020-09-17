@@ -130,6 +130,21 @@ class SpeciesConverter(torch.nn.Module):
         for i, s in enumerate(species):
             self.conv_tensor[rev_idx[s]] = i
 
+    @classmethod
+    def like_ani1x(cls):
+        return cls(['H', 'C', 'N', 'O'])
+
+    @classmethod
+    def like_ani1ccx(cls):
+        return cls(['H', 'C', 'N', 'O'])
+
+    @classmethod
+    def like_ani2x(cls):
+        # custom order of ANI2x is NOT periodic table ordering, which 
+        # doesn't make sense but whatever...
+        return cls(['H', 'C', 'N', 'O', 'S', 'F', 'Cl'])
+
+
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None):
