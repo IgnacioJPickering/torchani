@@ -19,8 +19,6 @@ def reproducible_init_bias(m):
             torch.nn.init.constant_(m.bias, 1.e-5)
 
 dims = {'dim_in': 384, 'dim_out1' : 192, 'dim_out2' : 96}
-dims_shared = [192, 96]
-dims_specific = [96, 96]
 
 
 class TestVariantsAEV(unittest.TestCase):
@@ -50,8 +48,8 @@ class TestVariantANIModels(unittest.TestCase):
     def testMultiple(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         species = ['H', 'C', 'N', 'O']
-        networks = OrderedDict([(s, AtomicNetworkClassic.like_ani1x()) for s in species])
-        networks_reference = OrderedDict([(s, AtomicNetworkClassic.like_ani1x()) for s in species])
+        networks = OrderedDict([(s, AtomicNetworkClassic.like_ani1x('H')) for s in species])
+        networks_reference = OrderedDict([(s, AtomicNetworkClassic.like_ani1x('H')) for s in species])
         model = ANIModelMultiple(networks, number_outputs=1, squeeze_last=True).to(device)
         model_reference = ANIModel(networks_reference).to(device)
         model.apply(reproducible_init_bias)
@@ -61,15 +59,11 @@ class TestVariantANIModels(unittest.TestCase):
         self.assertTrue(torch.isclose(model((species, aevs)).energies, model_reference((species, aevs)).energies))
 
 
-
-
-
-
 class TestAtomicNetworks(unittest.TestCase):
 
     def testClassic(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        an = AtomicNetworkClassic.like_ani1x().to(device)
+        an = AtomicNetworkClassic.like_ani1x('H').to(device)
         an.apply(reproducible_init_nobias)
         e = an(torch.zeros((1, 384), dtype=torch.float, device=device)).squeeze()
         self.assertTrue(torch.isclose(e, torch.tensor(0., device=device)))
@@ -101,6 +95,7 @@ class TestAtomicNetworks(unittest.TestCase):
     def testResidualMultiple2(self):
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         outputs = 5
+        dims_shared = [192, 96]
         an = AtomicNetworkSpecFlexMultiple(dim_in= 384, dims_shared= list(dims.values())[1:], dims_specific=[], number_outputs=outputs).to(device)
         an.apply(reproducible_init_nobias)
         e = an(torch.zeros((1, 384), dtype=torch.float, device=device)).squeeze()
@@ -109,6 +104,7 @@ class TestAtomicNetworks(unittest.TestCase):
         e = an(torch.zeros((1, 384), dtype=torch.float, device=device)).squeeze()
         self.assertTrue(torch.isclose(e, torch.tensor([13696.0898]*outputs, device=device)).all())
 
+        dims_specific = [96, 96]
         # another test, but now with some specific layers
         an = AtomicNetworkSpecFlexMultiple(dim_in= 384, dims_shared= dims_shared, dims_specific=dims_specific, number_outputs=5).to(device)
         an.apply(reproducible_init_nobias)

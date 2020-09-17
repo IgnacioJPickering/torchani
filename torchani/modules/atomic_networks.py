@@ -14,6 +14,8 @@ class Normalizer(torch.nn.Module):
     def forward(self, x):
         return (x - self.mean) / self.std
 
+    def extra_repr(self):
+        return f'mean={self.mean}, std={self.std}'
 
 class AtomicNetworkClassic(torch.nn.Module):
     """Classic ANI style atomic network"""
@@ -29,10 +31,8 @@ class AtomicNetworkClassic(torch.nn.Module):
         super().__init__()
 
         # activation can be custom or CELU
-        if activation is not None:
-            self.a = activation
-        else:
-            self.a = torch.nn.CELU(0.1)
+        if activation is None:
+            activation = torch.nn.CELU(0.1)
 
         # automatically insert the first dimension
         dims.insert(0, dim_in)
@@ -40,7 +40,7 @@ class AtomicNetworkClassic(torch.nn.Module):
         layers = []
         for j in dimensions:
             layers.append(torch.nn.Linear(dims[j], dims[j+1], bias=other_layers_bias))
-            layers.append(self.a)
+            layers.append(activation)
         # final layer is always appended
         layers.append(torch.nn.Linear(dims[-1], 1, bias=final_layer_bias))
         self.sequential = torch.nn.Sequential(*layers)
