@@ -1,8 +1,10 @@
 """Contains different versions of the main ANIModel module"""
 from typing import Tuple, Optional
 import torch
+from collections import OrderedDict
 from torch import Tensor
 from ..nn import ANIModel, SpeciesEnergies
+from .atomic_networks import AtomicNetworkClassic
 
 class Squeezer(torch.nn.Module):
     def forward(self, x):
@@ -42,6 +44,23 @@ class ANIModelMultiple(ANIModel):
             self.squeezer = torch.nn.Identity()
 
         self.number_outputs=number_outputs
+
+    @classmethod
+    def like_ani1x(cls):
+        species = ['H', 'C', 'N', 'O']
+        distinct_list = [(s, AtomicNetworkClassic.like_ani1x(s)) for s in species]
+        return cls(OrderedDict(distinct_list))
+
+    @classmethod
+    def like_ani1ccx(cls):
+        # just a synonym
+        return cls.like_ani1ccx()
+
+    @classmethod
+    def like_ani2x(cls):
+        species = ['H', 'C', 'N', 'O', 'S', 'F', 'Cl']
+        distinct_list = [(s, AtomicNetworkClassic.like_ani2x(s)) for s in species]
+        return cls(OrderedDict(distinct_list))
 
     def forward(
             self,
