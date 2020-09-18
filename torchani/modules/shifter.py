@@ -69,4 +69,4 @@ class EnergyShifter(torch.nn.Module):
         return SpeciesEnergies(species, energies)
 
     def extra_repr(self):
-        return f'self_energies={self.self_energies}, intercept={self.intercept}'
+        return f'self_energies={self.self_energies.detach().cpu().numpy()}, intercept={self.intercept}'
