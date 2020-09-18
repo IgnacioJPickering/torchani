@@ -158,7 +158,7 @@ class Transformations:
     def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None, fit_intercept=False):
         intercept = 0.0
         shape_inference = False
-        if isinstance(self_energies, [utils.EnergyShifter, modules.EnergyShifter]):
+        if isinstance(self_energies, (utils.EnergyShifter, modules.EnergyShifter)):
             if isinstance(self_energies, utils.EnergyShifter):
                 fit_intercept = self_energies.fit_intercept
             shape_inference = True
