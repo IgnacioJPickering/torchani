@@ -65,12 +65,12 @@ class TemplateModel(torch.nn.Module):
     
     def shift_before_output_(self, shift):
         assert isinstance(shift, bool)
-        self.register_parameter('shift_before_output', torch.tensor(shift, dtype=torch.bool))
+        self.shift_before_output = torch.tensor(shift, dtype=torch.bool)
         return self
 
     def periodic_table_index_(self, use):
         assert isinstance(use, bool)
-        self.register_parameter('periodic_table_index', torch.tensor(use, dtype=torch.bool))
+        self.periodic_table_index = torch.tensor(use, dtype=torch.bool)
         return self
 
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
