@@ -142,7 +142,7 @@ class Transformations:
     @staticmethod
     def species_to_indices(reenterable_iterable, species_order=('H', 'C', 'N', 'O', 'F', 'S', 'Cl')):
         if species_order == 'periodic_table':
-            species_order = utils.PERIODIC_TABLE
+            species_order = ['e'] + utils.PERIODIC_TABLE
         idx = {k: i for i, k in enumerate(species_order)}
 
         def reenterable_iterable_factory():
