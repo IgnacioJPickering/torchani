@@ -49,18 +49,18 @@ class ANIModelMultiple(ANIModel):
     def like_ani1x(cls):
         species = ['H', 'C', 'N', 'O']
         distinct_list = [(s, AtomicNetworkClassic.like_ani1x(s)) for s in species]
-        return cls(OrderedDict(distinct_list))
+        return cls(OrderedDict(distinct_list), squeeze_last=True)
 
     @classmethod
     def like_ani1ccx(cls):
         # just a synonym
-        return cls.like_ani1ccx()
+        return cls.like_ani1x()
 
     @classmethod
     def like_ani2x(cls):
         species = ['H', 'C', 'N', 'O', 'S', 'F', 'Cl']
         distinct_list = [(s, AtomicNetworkClassic.like_ani2x(s)) for s in species]
-        return cls(OrderedDict(distinct_list))
+        return cls(OrderedDict(distinct_list), squeeze_last=True)
 
     def forward(
             self,
