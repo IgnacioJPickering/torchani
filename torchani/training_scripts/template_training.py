@@ -60,7 +60,7 @@ print("Training starting from epoch", lr_scheduler.last_epoch + 1)
 for _ in range(lr_scheduler.last_epoch + 1, max_epochs):
 
     # Training loop per epoch
-    for i, conformation in tqdm(enumerate(training, total=total_conformations, desc=f'epoch {lr_scheduler.last_epoch}')):
+    for i, conformation in tqdm(enumerate(training), total=total_conformations, desc=f'epoch {lr_scheduler.last_epoch}'):
         species = conformation['species'].to(device)
         coordinates = conformation['coordinates'].to(device).float()
         true_energies = conformation['energies'].to(device).float()
