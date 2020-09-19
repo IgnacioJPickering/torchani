@@ -14,7 +14,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 # setup model and initialize parameters
 # this uses H C N O species and by default has periodic_table_index on
 # setting shift before output to false makes the model NOT add saes before output
-model = TemplateModel.like_ani1x().to(device).shift_before_output(False)
+model = TemplateModel.like_ani1x().to(device).shift_before_output_(False)
 model.apply(init_traditional)
 
 # Some configuration variables
@@ -23,8 +23,9 @@ max_epochs = 100
 early_stopping_learning_rate = 1.0e-5
 
 # setup training and validation sets
-data_path = 'some path'
-training, validation = data.load(data_path).subtract_self_energies(model.energy_shifter, model.species_order()).species_to_indices('periodic_table').shuffle().split(0.8, None)
+data_path = Path(__file__).resolve().parent.joinpath('../../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5').resolve()
+assert data_path.is_file()
+training, validation = data.load(data_path.as_posix()).subtract_self_energies(model.energy_shifter, model.species_order()).species_to_indices('periodic_table').shuffle().split(0.8, None)
 training = training.collate(batch_size).cache()
 validation = validation.collate(batch_size).cache()
 

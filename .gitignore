@@ -38,3 +38,5 @@ Untitled.ipynb
 /test*.py
 .coverage
 htmlcov/
+# no tensorflow
+*tfevents*
