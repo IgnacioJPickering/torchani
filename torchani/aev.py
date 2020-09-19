@@ -3,16 +3,6 @@ import torch
 from torch import Tensor
 import math
 from typing import Tuple, Optional, NamedTuple
-import sys
-
-if sys.version_info[:2] < (3, 7):
-    class FakeFinal:
-        def __getitem__(self, x):
-            return x
-    Final = FakeFinal()
-else:
-    from torch.jit import Final
-
 
 class SpeciesAEV(NamedTuple):
     species: Tensor
@@ -83,7 +73,7 @@ def angular_terms(Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta: Tensor,
     return ret.flatten(start_dim=1)
 
 
-def compute_shifts(cell: Tensor, pbc: Tensor, cutoff: float) -> Tensor:
+def compute_shifts(cell: Tensor, pbc: Tensor, cutoff: Tensor) -> Tensor:
     """Compute the shifts of unit cell along the given cell vectors to make it
     large enough to contain all pairs of neighbor atoms with PBC under
     consideration
@@ -344,23 +334,13 @@ class AEVComputer(torch.nn.Module):
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
-    Rcr: Final[float]
-    Rca: Final[float]
-    num_species: Final[int]
-
-    radial_sublength: Final[int]
-    radial_length: Final[int]
-    angular_sublength: Final[int]
-    angular_length: Final[int]
-    aev_length: Final[int]
-    sizes: Final[Tuple[int, int, int, int, int]]
 
     def __init__(self, Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species):
         super().__init__()
-        self.Rcr = Rcr
-        self.Rca = Rca
+        self.register_buffer('Rcr', torch.tensor(Rcr, dtype=torch.double))
+        self.register_buffer('Rca', torch.tensor(Rca, dtype=torch.double))
         assert Rca <= Rcr, "Current implementation of AEVComputer assumes Rca <= Rcr"
-        self.num_species = num_species
+        self.register_buffer('num_species', torch.tensor(num_species, dtype=torch.long))
 
         # convert constant tensors to a ready-to-broadcast shape
         # shape convension (..., EtaR, ShfR)
@@ -373,27 +353,34 @@ class AEVComputer(torch.nn.Module):
         self.register_buffer('ShfZ', ShfZ.view(1, 1, 1, -1))
 
         # The length of radial subaev of a single species
-        self.radial_sublength = self.EtaR.numel() * self.ShfR.numel()
+        radial_sublength = self.EtaR.numel() * self.ShfR.numel()
+        self.register_buffer('radial_sublength', torch.tensor(radial_sublength, dtype=torch.long))
         # The length of full radial aev
-        self.radial_length = self.num_species * self.radial_sublength
+        radial_length = self.num_species * self.radial_sublength
+        self.register_buffer('radial_length', torch.tensor(radial_length.item(), dtype=torch.long))
         # The length of angular subaev of a single species
-        self.angular_sublength = self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel() * self.ShfZ.numel()
+        angular_sublength = self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel() * self.ShfZ.numel()
+        self.register_buffer('angular_sublength', torch.tensor(angular_sublength, dtype=torch.long))
         # The length of full angular aev
-        self.angular_length = (self.num_species * (self.num_species + 1)) // 2 * self.angular_sublength
+        angular_length = (self.num_species * (self.num_species + 1)) // 2 * self.angular_sublength
+        self.register_buffer('angular_length', torch.tensor(angular_length.item(), dtype=torch.long))
         # The length of full aev
-        self.aev_length = self.radial_length + self.angular_length
-        self.sizes = self.num_species, self.radial_sublength, self.radial_length, self.angular_sublength, self.angular_length
+        aev_length = self.radial_length + self.angular_length
+        self.register_buffer('aev_length', torch.tensor(aev_length.item(), dtype=torch.long))
 
         self.register_buffer('triu_index', triu_index(num_species).to(device=self.EtaR.device))
 
         # Set up default cell and compute default shifts.
         # These values are used when cell and pbc switch are not given.
-        cutoff = max(self.Rcr, self.Rca)
+        self.register_buffer('cutoff', torch.tensor(max(self.Rcr, self.Rca).item(), dtype=torch.double))
         default_cell = torch.eye(3, dtype=self.EtaR.dtype, device=self.EtaR.device)
         default_pbc = torch.zeros(3, dtype=torch.bool, device=self.EtaR.device)
-        default_shifts = compute_shifts(default_cell, default_pbc, cutoff)
+        default_shifts = compute_shifts(default_cell, default_pbc, self.cutoff)
         self.register_buffer('default_cell', default_cell)
         self.register_buffer('default_shifts', default_shifts)
+
+    def sizes(self) -> Tuple[int, int, int, int, int]:
+        return self.num_species.item(), self.radial_sublength.item(), self.radial_length.item(), self.angular_sublength.item(), self.angular_length.item()
 
     @classmethod
     def cover_linearly(cls, radial_cutoff: float, angular_cutoff: float,
@@ -522,11 +509,10 @@ class AEVComputer(torch.nn.Module):
         assert species.shape == coordinates.shape[:-1]
 
         if cell is None and pbc is None:
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes, None)
+            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
         else:
             assert (cell is not None and pbc is not None)
-            cutoff = max(self.Rcr, self.Rca)
-            shifts = compute_shifts(cell, pbc, cutoff)
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes, (cell, shifts))
+            shifts = compute_shifts(cell, pbc, self.cutoff)
+            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
 
         return SpeciesAEV(species, aev)
