@@ -1,16 +1,8 @@
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
-import sys
 from torchani.aev import compute_aev, compute_shifts, AEVComputer
 import torch
 
-if sys.version_info[:2] < (3, 7):
-    class FakeFinal:
-        def __getitem__(self, x):
-            return x
-    Final = FakeFinal()
-else:
-    from torch.jit import Final
 
 class SpeciesSplitAEV(NamedTuple):
     species: Tensor
@@ -23,17 +15,6 @@ class AEVComputerSplit(AEVComputer):
 
     Useful for different refinement of angular and radial subsections of the AEV
     """
-    Rcr: Final[float]
-    Rca: Final[float]
-    num_species: Final[int]
-
-    radial_sublength: Final[int]
-    radial_length: Final[int]
-    angular_sublength: Final[int]
-    angular_length: Final[int]
-    aev_length: Final[int]
-    sizes: Final[Tuple[int, int, int, int, int]]
-
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesSplitAEV:
@@ -43,12 +24,12 @@ class AEVComputerSplit(AEVComputer):
         assert species.shape == coordinates.shape[:-1]
 
         if cell is None and pbc is None:
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes, None)
+            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
         else:
             assert (cell is not None and pbc is not None)
             cutoff = max(self.Rcr, self.Rca)
             shifts = compute_shifts(cell, pbc, cutoff)
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes, (cell, shifts))
+            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
         radial_aev, angular_aev = torch.split(aev, [self.radial_length, self.angular_length], dim=-1)
         num_species_pairs = (((self.num_species + 1) * (self.num_species))//2)
         angular_dist_divisions = len(self.ShfA)
