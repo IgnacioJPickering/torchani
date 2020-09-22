@@ -28,6 +28,7 @@ assert data_path.is_file()
 training, validation = data.load(data_path.as_posix()).subtract_self_energies(model.energy_shifter, model.species_order()).species_to_indices('periodic_table').shuffle().split(0.8, None)
 training = training.collate(batch_size).cache()
 validation = validation.collate(batch_size).cache()
+print('\n')
 
 # setup optimizer, scheduler, loss
 optimizer = torch.optim.AdamW(model.parameters(), lr=0.001, betas=(0.9, 0.999), weight_decay=0.00001, amsgrad=False, eps=1e-8)
@@ -48,16 +49,26 @@ if latest_checkpoint.is_file():
     optimizer.load_state_dict(checkpoint['optimizer'])
     lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
 
-# initial log
-validation_rmse = validate_energies(model, validation, device)
-print('RMSE:', validation_rmse, 'at epoch', lr_scheduler.last_epoch + 1)
-tensorboard.add_scalar('validation_rmse', validation_rmse, lr_scheduler.last_epoch)
-tensorboard.add_scalar('best_validation_rmse', lr_scheduler.best, lr_scheduler.last_epoch)
-tensorboard.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], lr_scheduler.last_epoch)
+# If the model is already trained, just exit
+if lr_scheduler.last_epoch == max_epochs: 
+    print('Model fully trained, with {max_epochs} epochs')
+    exit()
 
-total_conformations = len(training)
-print("Training starting from epoch", lr_scheduler.last_epoch + 1)
-for _ in range(lr_scheduler.last_epoch + 1, max_epochs):
+# at the beginning the epoch is the 0th epoch, epoch 0 means not doing nothing
+# afterwards rmse and logging is done after an epoch finishes
+
+# initial log
+if  lr_scheduler.last_epoch == 0:
+    validation_rmse = validate_energies(model, validation, device)
+    print(f'Validation RMSE: {validation_rmse} after epoch {lr_scheduler.last_epoch}')
+    tensorboard.add_scalar('validation_rmse', validation_rmse, lr_scheduler.last_epoch)
+    tensorboard.add_scalar('best_validation_rmse', lr_scheduler.best, lr_scheduler.last_epoch)
+    tensorboard.add_scalar('learning_rate', optimizer.param_groups[0]['lr'], lr_scheduler.last_epoch)
+
+total_conformations = len(training) 
+print("\nTraining starting from epoch", lr_scheduler.last_epoch + 1)
+
+for _ in range(lr_scheduler.last_epoch, max_epochs):
 
     # Training loop per epoch
     for i, conformation in tqdm(enumerate(training), total=total_conformations, desc=f'epoch {lr_scheduler.last_epoch}'):
@@ -79,9 +90,14 @@ for _ in range(lr_scheduler.last_epoch + 1, max_epochs):
 
     # Validate (every epoch)
     validation_rmse = validate_energies(model, validation, device)
-    print('RMSE:', validation_rmse, 'at epoch', lr_scheduler.last_epoch + 1)
-    
+
+    # Step the scheduler and save the best model (every epoch)
+    if lr_scheduler.is_better(validation_rmse, lr_scheduler.best):
+        torch.save(model.state_dict(), best_model_checkpoint.as_posix())
+    lr_scheduler.step(validation_rmse)
+
     # Log per epoch info
+    print(f'Validation RMSE: {validation_rmse} after epoch {lr_scheduler.last_epoch}')
     tensorboard.add_scalar('validation_rmse', validation_rmse, lr_scheduler.last_epoch)
     tensorboard.add_scalar('best_validation_rmse', lr_scheduler.best, lr_scheduler.last_epoch)
     tensorboard.add_scalar('learning_rate', optimizer.param_groups[0]['lr'] , lr_scheduler.last_epoch)
@@ -97,8 +113,4 @@ for _ in range(lr_scheduler.last_epoch + 1, max_epochs):
         'lr_scheduler': lr_scheduler.state_dict()
     }, latest_checkpoint.as_posix())
 
-    if lr_scheduler.is_better(validation_rmse, lr_scheduler.best):
-        torch.save(model.state_dict(), best_model_checkpoint.as_posix())
     
-    # Step the scheduler (every epoch)
-    lr_scheduler.step(validation_rmse)
