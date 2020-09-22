@@ -131,7 +131,7 @@ class SpeciesConverter(torch.nn.Module):
             self.conv_tensor[rev_idx[s]] = i
 
     def species_order(self):
-        znumbers = ['e'] + utils.PERIODIC_TABLE
+        znumbers = utils.PERIODIC_TABLE
         species = [znumbers[j] for j in (self.conv_tensor != -1).nonzero()]
         return species
 
