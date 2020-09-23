@@ -1,10 +1,14 @@
+from collections import OrderedDict
 from ..nn import SpeciesEnergies, SpeciesConverter
 from ..aev import AEVComputer
 from .shifter import EnergyShifter
 from .ani_models import ANIModelMultiple
+from torchani import modules
 import torch
 from torch import Tensor
 from typing import Optional, Tuple
+from pathlib import Path
+import yaml
 
 class TemplateModel(torch.nn.Module):
     r"""Template for ANI models"""
@@ -22,6 +26,45 @@ class TemplateModel(torch.nn.Module):
         self.register_buffer('periodic_table_index',
                 torch.tensor(periodic_table_index, dtype=torch.bool))
         self.register_buffer('shift_before_output', torch.tensor(shift, dtype=torch.bool))
+    
+    @classmethod
+    def from_yaml(cls, yaml_file):
+        # Create a template model from a Yaml file with specified architecture
+        if isinstance(yaml_file, str):
+            with open(Path(yaml_file).resolve(), 'r') as f:
+                hyper = yaml.load(f, Loader=yaml.FullLoader)
+        elif isinstance(yaml_file, Path):
+            with open(yaml_file.resolve(), 'r') as f:
+                hyper = yaml.load(f, Loader=yaml.FullLoader)
+        elif isinstance(yaml_file, dict):
+            keys = list(yaml_file.keys())
+            assert 'species_converter' in keys
+            assert 'aev_computer' in keys
+            assert 'ani_model' in keys
+            assert 'atomic_network' in keys
+            assert 'energy_shifter' in keys
+            hyper = yaml_file
+
+
+        class_ani_model = getattr(modules, hyper['ani_model']['class'])
+        class_aev_computer = getattr(modules, hyper['aev_computer']['class'])
+        class_atomic_network = getattr(modules, hyper['atomic_network']['class'])
+        
+        # this is used to ensure that all of the pieces fit together correctly
+        species = hyper['species_converter']['kwargs']['species']
+        assert len(species) == hyper['aev_computer']['kwargs']['num_species']
+        assert len(species) == hyper['energy_shifter']['kwargs']['num_species']
+
+        atomic_networks = OrderedDict([ (s, class_atomic_network(**hyper['atomic_network']['kwargs'])) for 
+                s in species])
+        kwargs = {
+                'species_converter' : SpeciesConverter(**hyper['species_converter']['kwargs']), 
+                'aev_computer' : class_aev_computer.cover_linearly(**hyper['aev_computer']['kwargs']), 
+                'neural_networks' : class_ani_model(atomic_networks, **hyper['ani_model']['kwargs']), 
+                'energy_shifter' : EnergyShifter(**hyper['energy_shifter']['kwargs'])
+        }
+        return cls(**kwargs)
+        
 
     @classmethod
     def like_ani1x(cls, shift=True, periodic_table_index=True):
