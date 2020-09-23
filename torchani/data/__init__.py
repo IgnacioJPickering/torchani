@@ -201,7 +201,10 @@ class Transformations:
             if isinstance(shifter, utils.EnergyShifter):
                 shifter.__init__(sae, shifter.fit_intercept)
             else:
-                shifter.__init__(self_energies=sae[:-1], intercept=sae[-1])
+                if fit_intercept:
+                    shifter.__init__(self_energies=sae[:-1], intercept=sae[-1])
+                else:
+                    shifter.__init__(self_energies=sae)
         gc.collect()
 
         def reenterable_iterable_factory():
