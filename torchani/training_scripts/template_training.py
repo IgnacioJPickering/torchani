@@ -28,9 +28,9 @@ model = TemplateModel.from_yaml(config).to(device).shift_before_output_(False)
 model.apply(init_traditional)
 
 # Some configuration variables, which are general
-batch_size = config['batch_size'] or 2560 
-max_epochs = config['max_epochs'] or 100
-early_stopping_lr = config['early_stopping_lr'] or 1.0e-5
+batch_size = config['batch_size'] 
+max_epochs = config['max_epochs']
+early_stopping_lr = config['early_stopping_lr'] 
 
 # setup training and validation sets
 data_path = Path(__file__).resolve().parent.joinpath('../../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5').resolve()
@@ -126,5 +126,3 @@ for _ in range(lr_scheduler.last_epoch, max_epochs):
         'optimizer': optimizer.state_dict(),
         'lr_scheduler': lr_scheduler.state_dict()
     }, latest_checkpoint.as_posix())
-
-    
