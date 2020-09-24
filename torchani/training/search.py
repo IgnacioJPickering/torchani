@@ -107,7 +107,7 @@ def generate_trials(setup_ranges, trials, model_path, verbose=False):
         model_path = model_path.resolve()
     copies = []
     for _ in range(trials):
-        with open('./hyper.yaml', 'r') as f:
+        with open(model_path, 'r') as f:
             copies.append(yaml.load(f, Loader=yaml.FullLoader))
     
     for p in setup_ranges.keys():
@@ -148,11 +148,11 @@ def dump_to_files(copies, parent_dir = '.'):
             # needs a very new version of yaml
             yaml.dump(c, f, sort_keys=False)
 
-setup_ranges = {'weight_decay' : [1e-7, 1e-5], 
-                'lr': [1e-7, 1e-3], 
-                'dims': [[128, 170], [113, 125], [123, 150]]}
-trials = 4
-
-copies = generate_trials(setup_ranges, trials, './hyper.yaml')
-dump_to_files(copies)
-
+#setup_ranges = {'weight_decay' : [1e-7, 1e-5], 
+#                'lr': [1e-7, 1e-3], 
+#                'dims': [[128, 170], [113, 125], [123, 150]]}
+#trials = 4
+#
+#copies = generate_trials(setup_ranges, trials, './hyper.yaml')
+#dump_to_files(copies)
+#

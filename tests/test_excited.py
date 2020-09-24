@@ -5,18 +5,7 @@ from torchani.modules import AEVComputerSplit,ANIModelMultiple
 from torchani.modules import AtomicNetworkClassic, AtomicNetworkResidual
 from torchani.modules import AtomicNetworkResidualMultiple, AtomicNetworkSpecFlexMultiple
 from torchani import AEVComputer, ANIModel
-
-def reproducible_init_nobias(m):
-    if isinstance(m, torch.nn.Linear):
-        torch.nn.init.constant_(m.weight, 1.)
-        if m.bias is not None:
-            torch.nn.init.constant_(m.bias, 0.)
-
-def reproducible_init_bias(m):
-    if isinstance(m, torch.nn.Linear):
-        torch.nn.init.constant_(m.weight, 1.)
-        if m.bias is not None:
-            torch.nn.init.constant_(m.bias, 1.e-5)
+from torchani.training import reproducible_init_nobias, reproducible_init_bias
 
 dims = {'dim_in': 384, 'dim_out1' : 192, 'dim_out2' : 96}
 

@@ -32,3 +32,15 @@ def init_traditional(m):
         if m.bias is not None:
             torch.nn.init.zeros_(m.bias)
 
+def reproducible_init_nobias(m):
+    if isinstance(m, torch.nn.Linear):
+        torch.nn.init.constant_(m.weight, 1.)
+        if m.bias is not None:
+            torch.nn.init.constant_(m.bias, 0.)
+
+def reproducible_init_bias(m):
+    if isinstance(m, torch.nn.Linear):
+        torch.nn.init.constant_(m.weight, 1.)
+        if m.bias is not None:
+            torch.nn.init.constant_(m.bias, 1.e-5)
+
