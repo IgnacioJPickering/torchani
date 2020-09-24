@@ -1,5 +1,5 @@
 """functions useful for hyperparameter search"""
-#import torch
+from pathlib import Path
 import numpy as np
 import yaml
 from math import log10, floor
@@ -84,38 +84,75 @@ def get_random_parameter_scan(parameter, range_, trials):
             'angular_start', 'radial_cutoff', 'angular_cutoff']
     
     if parameter in log_uniform_params:
-        return log_uniform(low=range_[0], high=range_[1], size=trials)
+        return log_uniform(low=range_[0], high=range_[1], size=trials).tolist()
     elif parameter in pow2_params:
-        return pow2_uniform(low=range_[0], high=range_[1], size=trials)
+        return pow2_uniform(low=range_[0], high=range_[1], size=trials).tolist()
     elif parameter in linear_uniform_params:
-        return linear_uniform(low=range_[0], high=range_[1], size=trials)
+        return linear_uniform(low=range_[0], high=range_[1], size=trials).tolist()
     elif parameter in integer_params:
-        return integer_uniform(low=range_[0], high=range_[1], size=trials)
+        return integer_uniform(low=range_[0], high=range_[1], size=trials).tolist()
     elif parameter == 'dims':
         range_ = np.asarray(range_)
         output = [integer_uniform(r[0], r[1], trials) for r in range_]
-        output = np.asarray(output).transpose()
+        output = np.asarray(output).transpose().tolist()
         return output
 
+def generate_trials(setup_ranges, trials, model_path, verbose=False):
+    if verbose:
+        print(f'Generating {trials} training setups for random hyperparameter search,'
+                f' scanning parameters {set(setup_ranges.keys())}')
+    if isinstance(model_path, str):
+        model_path = Path(model_path).resolve()
+    else:
+        model_path = model_path.resolve()
+    copies = []
+    for _ in range(trials):
+        with open('./hyper.yaml', 'r') as f:
+            copies.append(yaml.load(f, Loader=yaml.FullLoader))
+    
+    for p in setup_ranges.keys():
+        setup_ranges[p] = get_random_parameter_scan(p, setup_ranges[p], trials)
+    
+    for j in range(trials):
+        for k, v in setup_ranges.items():
+            insert_in_key(copies[j], k, v[j])
+    
+    for j, c in enumerate(copies):
+        aev = c['aev_computer']['kwargs']
+        radial_length = aev['num_species'] * aev['radial_dist_divisions']
+        pairs = (aev['num_species'] * (aev['num_species'] + 1)) // 2
+        angular_length = pairs * aev['angular_dist_divisions'] * aev['angle_sections']
+        total_length = angular_length + radial_length
+        
+        # These always have to be changed for consistency between the modules 
+        c['atomic_network']['kwargs']['dim_in'] = total_length
+        num_species = len(c['species_converter']['kwargs']['species'])
+        assert c['aev_computer']['kwargs']['num_species'] == num_species
+        assert c['energy_shifter']['kwargs']['num_species'] == num_species
+    return copies
+    
+def dump_to_files(copies, parent_dir = '.'):
+    name = copies[0]['name']
+    for c in copies:
+        assert name == c['name']
+    parent_dir = Path(parent_dir).resolve()
+    main_dir = parent_dir.joinpath(name)
+    # dump yaml dictionaries to files, maintain order to 
+    # improve readability
+    # each of the copies is stored in its own directory together with the
+    # best.pt and latest.pt models and the tb events
+    for j, c in enumerate(copies):
+        file_path = main_dir.joinpath(f'trial_{j}/trial_{j}.yaml')
+        file_path.parent.mkdir(parents=True)
+        with open(file_path, 'w') as f:
+            # needs a very new version of yaml
+            yaml.dump(c, f, sort_keys=False)
 
 setup_ranges = {'weight_decay' : [1e-7, 1e-5], 
-                'lr': [1e-7, 1e-3]}
-
-hyperparameters = ['weight_decay', 'lr']
+                'lr': [1e-7, 1e-3], 
+                'dims': [[128, 170], [113, 125], [123, 150]]}
 trials = 4
-print(f'Generating {trials} training setups for random hyperparameter search,'
-        f' scanning parameters {set(setup_ranges.keys())}')
-copies = []
-for _ in range(trials):
-    with open('./hyper.yaml', 'r') as f:
-        copies.append(yaml.load(f, Loader=yaml.FullLoader))
 
-for p in setup_ranges.keys():
-    setup_ranges[p] = get_random_parameter_scan(p, setup_ranges[p], trials)
+copies = generate_trials(setup_ranges, trials, './hyper.yaml')
+dump_to_files(copies)
 
-for j in range(trials):
-    for k, v in setup_ranges.items():
-        insert_in_key(copies[j], k, v[j])
-
-from pprint import pprint
-pprint(copies)
