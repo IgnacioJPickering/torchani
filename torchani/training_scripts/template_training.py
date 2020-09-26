@@ -124,31 +124,17 @@ def train(model, optimizer, lr_scheduler, loss_function, dataset, output_paths, 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Train a network from a yaml file configuration')
+    parser.add_argument('-d', '--dataset-path', type=str, required=True, help='Path to the dataset to train on')
     parser.add_argument('-y', '--yaml-path', type=str, default='../training/hyper.yaml', help='Input yaml configuration')
-    parser.add_argument('-t', '--tb-path', type=str, help='Path for tensorboard output')
-    parser.add_argument('-l', '--latest-path', type=str, help='Path where latest checkpoint is to be saved')
-    parser.add_argument('-b', '--best-path', type=str, help='Path where latest checkpoint is to be saved')
-    parser.add_argument('-o', '--output-paths', type=str, help='Path for'
-            ' tensorboard, latest and best checkpoints, if specified all of these'
-            ' files go there, other output options can\'t be specified together with this one')
+    parser.add_argument('-o', '--output-paths', type=str, default='.', help='Path for'
+            ' tensorboard, latest and best checkpoints')
     args = parser.parse_args()
 
     # Paths for output (tensorboard and checkpoints)
-    if args.output_paths is not None:
-        assert args.latest_path is None
-        assert args.best_path is None
-        assert args.tb_path is None
-        output_paths = Path(args.output_paths).resolve()
-        latest_path = output_paths.joinpath('latest.pt')
-        best_path = output_paths.joinpath('best.pt')
-        tensorboard_path = output_paths
-    else:
-        assert args.latest_path is not None
-        assert args.best_path is not None
-        assert args.tb_path is not None
-        latest_path = Path(args.latest_path).resolve().joinpath('latest.pt')
-        best_path = Path(args.best_path).resolve().joinpath('best.pt')
-        tensorboard_path = Path(args.tb_path).resolve()
+    output_paths = Path(args.output_paths).resolve()
+    latest_path = output_paths.joinpath('latest.pt')
+    best_path = output_paths.joinpath('best.pt')
+    tensorboard_path = output_paths
     OutputPaths = namedtuple('OutputPaths', 'tensorboard best latest')
     output_paths = OutputPaths(best=best_path, latest=latest_path, tensorboard=tensorboard_path)
 
@@ -173,13 +159,14 @@ if __name__ == '__main__':
     
     # setup training and validation sets
     Datasets = namedtuple('Datasets', 'training validation test')
-    data_path = Path(__file__).resolve().parent.joinpath('../../dataset/ani1-up_to_gdb4/ani_gdb_s01.h5').resolve()
+    data_path = Path(args.dataset_path).resolve()
     assert data_path.is_file()
-    training, validation = data.load(data_path.as_posix())\
-                                     .subtract_self_energies(model.energy_shifter, model.species_order())\
-                                     .species_to_indices('periodic_table')\
-                                     .shuffle()\
-                                     .split(config['datasets']['split_percentage'], None)
+    #training, validation = data.load(data_path.as_posix())\
+    training, validation = data.load(data_path.as_posix(), nonstandard_keys=config['datasets']['nonstandard_keys'])\
+                    .subtract_self_energies(model.energy_shifter, model.species_order())\
+                    .species_to_indices('periodic_table')\
+                    .shuffle().split(config['datasets']['split_percentage'], None)
+
     training = training.collate(config['datasets']['batch_size']).cache()
     validation = validation.collate(config['datasets']['batch_size']).cache()
     datasets = Datasets(training=training, validation=validation, test=None)

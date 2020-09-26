@@ -140,6 +140,19 @@ class Transformations:
     """Convert one reenterable iterable to another reenterable iterable"""
 
     @staticmethod
+    def standarize_keys(reenterable_iterable, nonstandard_keys):
+        def reenterable_iterable_factory():
+            for d in reenterable_iterable:
+                for std, non_std in nonstandard_keys.items():
+                    d[std] = d.pop(non_std)
+                yield d
+        try:
+            return IterableAdapterWithLength(reenterable_iterable_factory, len(reenterable_iterable))
+        except TypeError:
+            return IterableAdapter(reenterable_iterable_factory)
+
+
+    @staticmethod
     def species_to_indices(reenterable_iterable, species_order=('H', 'C', 'N', 'O', 'F', 'S', 'Cl')):
         if species_order == 'periodic_table':
             species_order = utils.PERIODIC_TABLE
@@ -330,8 +343,25 @@ class TransformableIterable:
         return len(self.wrapped_iterable)
 
 
-def load(path, additional_properties=()):
+def load(path, nonstandard_keys=None, additional_properties=()):
+    r"""As an additional option, if the dataset has a nonstandard key name you
+    can use these functions to rename that key into a standard key in memory,
+    without altering the dataset itself. This function takes a dictionary of the
+    form {standard_name : nonstandard_name}
+    """
     properties = PROPERTIES + additional_properties
+
+    coordinates_key = 'coordinates'
+    species_key = 'species'
+
+    # species and coordinates have to be standarized first, since they 
+    # are used always when iterating
+    if nonstandard_keys is not None:
+        if 'species' in nonstandard_keys.keys():
+            species_key = nonstandard_keys.pop('species')
+
+        if 'coordinates' in nonstandard_keys.keys():
+            coordinates_key = nonstandard_keys.pop('coordinates')
 
     def h5_files(path):
         """yield file name of all h5 files in a path"""
@@ -356,16 +386,20 @@ def load(path, additional_properties=()):
 
     def conformations():
         for m in molecules():
-            species = m['species']
-            coordinates = m['coordinates']
+            species = m[species_key]
+            coordinates = m[coordinates_key]
             for i in range(coordinates.shape[0]):
                 ret = {'species': species, 'coordinates': coordinates[i]}
                 for k in properties:
                     if k in m:
                         ret[k] = m[k][i]
                 yield ret
+    iterable = TransformableIterable(IterableAdapter(lambda: conformations()))
 
-    return TransformableIterable(IterableAdapter(lambda: conformations()))
+    # check if there is any other key to standarize
+    if nonstandard_keys:
+        iterable = iterable.standarize_keys(nonstandard_keys)
+    return iterable
 
 
 __all__ = ['load', 'collate_fn']

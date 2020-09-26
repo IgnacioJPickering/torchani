@@ -5,6 +5,10 @@ name: 'ani_hv'
 datasets:
     batch_size: 2048
     split_percentage: 0.8
+    nonstandard_keys : 
+        species: 'species'
+        coordinates: 'coordinates'
+        energies: 'energies'
 
 # general parameters
 general:
