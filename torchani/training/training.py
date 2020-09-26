@@ -2,7 +2,9 @@ import torch
 import math
 from torchani.units import hartree2kcalmol
 
-def validate_energies(model, validation, device):
+def validate_energies(model, validation):
+    # get device from an arbitrary model tensor
+    device = model.aev_computer.ShfR.device
     # run energy validation on a given dataset
     mse_sum = torch.nn.MSELoss(reduction='sum')
     total_mse = 0.0

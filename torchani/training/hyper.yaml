@@ -1,11 +1,16 @@
 # General name for the model
 name: 'ani_hv'
 
-# parameters associated with dataset and optimizer
-use_tqdm: False
-batch_size: 2048
-max_epochs: 3000
-early_stopping_lr: 1.0e-10
+# parameters associated with dataset
+datasets:
+    batch_size: 2048
+    split_percentage: 0.8
+
+# general parameters
+general:
+    early_stopping_lr: 1.0e-10
+    max_epochs: 3000
+    use_tqdm: False
 
 loss:
     class: 'RootAtomsLoss'
