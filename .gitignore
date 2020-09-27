@@ -40,3 +40,4 @@ Untitled.ipynb
 htmlcov/
 # no tensorflow
 *tfevents*
+/training_outputs/*/

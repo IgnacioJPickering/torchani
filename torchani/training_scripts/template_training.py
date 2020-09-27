@@ -1,6 +1,7 @@
 from pathlib import Path
 from collections import namedtuple
 from sys import maxsize
+import pickle
 import time
 
 import torch
@@ -32,7 +33,7 @@ def save_checkpoint(path, model, optimizer, lr_scheduler):
 
 def log_per_epoch(tensorboard, validation_rmse, lr_scheduler, optimizer, epoch_time=None, verbose=True):
     if verbose:
-        print(f'Validation RMSE: {validation_rmse} after epoch {lr_scheduler.last_epoch}')
+        print(f'Validation RMSE: {validation_rmse} after epoch {lr_scheduler.last_epoch} time: {epoch_time if epoch_time is not None else 0}')
     if tensorboard is not None:
         epoch_number = lr_scheduler.last_epoch
         tensorboard.add_scalar('validation_rmse', validation_rmse, epoch_number)
@@ -124,19 +125,21 @@ def train(model, optimizer, lr_scheduler, loss_function, dataset, output_paths, 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Train a network from a yaml file configuration')
-    parser.add_argument('-d', '--dataset-path', type=str, required=True, help='Path to the dataset to train on')
-    parser.add_argument('-y', '--yaml-path', type=str, default='../training/hyper.yaml', help='Input yaml configuration')
+    parser.add_argument('-d', '--dataset-path', default=None, help='Path to the dataset to train on')
+    parser.add_argument('-y', '--yaml-path', type=str, default='../../training_templates/hyper.yaml', help='Input yaml configuration')
     parser.add_argument('-o', '--output-paths', type=str, default='.', help='Path for'
-            ' tensorboard, latest and best checkpoints')
+            ' tensorboard, latest and best checkpoints, also holds pickled datasets after loading')
     args = parser.parse_args()
 
-    # Paths for output (tensorboard and checkpoints)
+    # Paths for output (tensorboard, checkpoints and validation / training pickles)
     output_paths = Path(args.output_paths).resolve()
     latest_path = output_paths.joinpath('latest.pt')
     best_path = output_paths.joinpath('best.pt')
+    training_pkl = output_paths.joinpath('training.pkl')
+    validation_pkl = output_paths.joinpath('validation.pkl')
     tensorboard_path = output_paths
-    OutputPaths = namedtuple('OutputPaths', 'tensorboard best latest')
-    output_paths = OutputPaths(best=best_path, latest=latest_path, tensorboard=tensorboard_path)
+    OutputPaths = namedtuple('OutputPaths', 'tensorboard best latest training_pkl validation_pkl')
+    output_paths = OutputPaths(best=best_path, latest=latest_path, tensorboard=tensorboard_path, training_pkl=training_pkl, validation_pkl=validation_pkl)
 
     # Yaml file Path
     yaml_path = Path(args.yaml_path).resolve()
@@ -159,18 +162,42 @@ if __name__ == '__main__':
     
     # setup training and validation sets
     Datasets = namedtuple('Datasets', 'training validation test')
-    data_path = Path(args.dataset_path).resolve()
-    assert data_path.is_file()
-    #training, validation = data.load(data_path.as_posix())\
-    training, validation = data.load(data_path.as_posix(), nonstandard_keys=config['datasets']['nonstandard_keys'])\
-                    .subtract_self_energies(model.energy_shifter, model.species_order())\
-                    .species_to_indices('periodic_table')\
-                    .shuffle().split(config['datasets']['split_percentage'], None)
+    
+    # fetch dataset path from input arguments or from configuration file 
+    pkl_files_exist = (output_paths.training_pkl.is_file(), output_paths.validation_pkl.is_file())
+    if all(pkl_files_exist):
+        print('Unpickling training and validation files')
+        with open(output_paths.training_pkl, 'rb') as f:
+            training = pickle.load(f)
+        with open(output_paths.validation_pkl, 'rb') as f:
+            validation = pickle.load(f)
+    elif pkl_files_exist[0] != pkl_files_exist[1]:
+        raise RuntimeError('Only one of the validation / training files exist, not possible to train')
+    else:
+        # case when none of the pickle files exist
+        print('Loading training and validation from h5 file')
+        if args.dataset_path is not None:
+            data_path = Path(args.dataset_path).resolve()
+        else:
+            data_path = Path(config['datasets']['dataset_path']).resolve()
+        assert data_path.is_file()
+        data.PROPERTIES = tuple(v for k, v in config['datasets']['nonstandard_keys'].items() if k not in ['species', 'coordinates'])
+        training, validation = data.load(data_path.as_posix(), nonstandard_keys=config['datasets']['nonstandard_keys'])\
+                        .subtract_self_energies(model.energy_shifter, model.species_order())\
+                        .species_to_indices('periodic_table')\
+                        .shuffle().split(config['datasets']['split_percentage'], None)
 
-    training = training.collate(config['datasets']['batch_size']).cache()
-    validation = validation.collate(config['datasets']['batch_size']).cache()
+        training = training.collate(config['datasets']['batch_size']).cache()
+        validation = validation.collate(config['datasets']['batch_size']).cache()
+        with open(output_paths.training_pkl, 'wb') as f:
+            pickle.dump(training, f)
+        with open(output_paths.validation_pkl, 'wb') as f:
+            pickle.dump(validation, f)
+        print('\n')
+    training = training.pin_memory()
+    validation = validation.pin_memory()
+
     datasets = Datasets(training=training, validation=validation, test=None)
-    print('\n')
     
     # load model parameters from checkpoint if it exists
     load_from_checkpoint(output_paths.latest, model, optimizer, lr_scheduler)

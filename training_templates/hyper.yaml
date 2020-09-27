@@ -3,12 +3,13 @@ name: 'ani_hv'
 
 # parameters associated with dataset
 datasets:
+    dataset_path: None
     batch_size: 2048
     split_percentage: 0.8
     nonstandard_keys : 
         species: 'species'
         coordinates: 'coordinates'
-        energies: 'energies'
+        energies: 'scf_energy'
 
 # general parameters
 general:
