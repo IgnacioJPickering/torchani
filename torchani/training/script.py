@@ -149,7 +149,7 @@ if __name__ == '__main__':
             output_paths = output_paths.joinpath(f'trial_{args.scan_index}')
         else:
             output_paths = output_paths.joinpath(name)
-        output_paths.mkdir(parents=True)
+        output_paths.mkdir(parents=True, exist_ok=True)
     else:
         output_paths = Path(args.output_paths).resolve()
 
