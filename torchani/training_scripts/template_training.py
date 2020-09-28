@@ -12,7 +12,7 @@ from tqdm import tqdm
 import torchani
 from torchani import data
 from torchani.modules import TemplateModel
-from torchani.training import validate_energies, init_traditional
+from torchani.training import validate_energies
 
 from torch import optim
 from torch.optim import lr_scheduler
@@ -127,12 +127,34 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a network from a yaml file configuration')
     parser.add_argument('-d', '--dataset-path', default=None, help='Path to the dataset to train on')
     parser.add_argument('-y', '--yaml-path', type=str, default='../../training_templates/hyper.yaml', help='Input yaml configuration')
-    parser.add_argument('-o', '--output-paths', type=str, default='.', help='Path for'
+    parser.add_argument('-o', '--output-paths', default=None, help='Path for'
             ' tensorboard, latest and best checkpoints, also holds pickled datasets after loading')
+    parser.add_argument('-s', '--scan-index', default=-1, type=int, help='Flag that determines that'
+            ' this is one run inside a hyperparameter scan, if it is this should be nonzero')
     args = parser.parse_args()
+    # Yaml file Path
+    yaml_path = Path(args.yaml_path).resolve()
+
+    # Get the configuration for the training
+    with open(yaml_path, 'r') as f:
+        config = yaml.load(f, Loader=yaml.FullLoader)
+
+    if args.output_paths is None:
+        # by default this is saved into a very nice folder labeled with the name
+        # of the yaml file, inside training_template
+        output_paths = Path(__file__).resolve().parent.parent.parent.joinpath('training_outputs/')
+        name = yaml_path.stem
+        if args.scan_index != -1:
+            output_paths = output_paths.joinpath(name + '_scan')
+            output_paths = output_paths.joinpath(f'trial_{args.scan_index}')
+        else:
+            output_paths = output_paths.joinpath(name)
+        output_paths.mkdir(parents=True)
+    else:
+        output_paths = Path(args.output_paths).resolve()
+
 
     # Paths for output (tensorboard, checkpoints and validation / training pickles)
-    output_paths = Path(args.output_paths).resolve()
     latest_path = output_paths.joinpath('latest.pt')
     best_path = output_paths.joinpath('best.pt')
     training_pkl = output_paths.joinpath('training.pkl')
@@ -141,19 +163,13 @@ if __name__ == '__main__':
     OutputPaths = namedtuple('OutputPaths', 'tensorboard best latest training_pkl validation_pkl')
     output_paths = OutputPaths(best=best_path, latest=latest_path, tensorboard=tensorboard_path, training_pkl=training_pkl, validation_pkl=validation_pkl)
 
-    # Yaml file Path
-    yaml_path = Path(args.yaml_path).resolve()
-
-    # three paths, path to the yaml file, and paths to outputs
-    # Get the configuration for the training
-    with open(yaml_path, 'r') as f:
-        config = yaml.load(f, Loader=yaml.FullLoader)
     
     # setup model and initialize parameters
     # setting shift before output to false makes the model NOT add saes before output
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = TemplateModel.from_yaml(config).to(device).shift_before_output_(False)
-    model.apply(init_traditional)
+    init_function = getattr(torchani.training, config['init']['function'])
+    model.apply(init_function)
 
     # setup optimizer, scheduler and loss
     optimizer = getattr(optim, config['optimizer']['class'])(model.parameters(), **config['optimizer']['kwargs'])
