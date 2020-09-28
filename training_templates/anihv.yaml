@@ -1,13 +1,12 @@
 # parameters associated with dataset
 datasets:
-    # this is the ANI1x released dataset
-    dataset_path: '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
-    batch_size: 2048
-    split_percentage: 0.8
+    dataset_path: '/home/ignacio/Datasets/nacho_cep_tddft.h5'
+    batch_size: 512
+    split_percentage: 0.9
     nonstandard_keys : 
         species: 'species'
         coordinates: 'coordinates'
-        energies: 'energies'
+        energies: 'scf_energy'
 
 # general parameters
 general:
@@ -35,7 +34,7 @@ lr_scheduler:
         factor: 0.5
 
 init:
-    function: 'init_traditional'
+    function: 'init_sharp_gaussian'
 
 
 # These hyperparameters are used for constructing the different parts of the

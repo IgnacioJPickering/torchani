@@ -1,15 +1,13 @@
-# General name for the model
-name: 'ani_hv'
-
 # parameters associated with dataset
 datasets:
-    dataset_path: None
+    # this is the ANI1x released dataset
+    dataset_path: '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
     batch_size: 2048
     split_percentage: 0.8
     nonstandard_keys : 
         species: 'species'
         coordinates: 'coordinates'
-        energies: 'scf_energy'
+        energies: 'energies'
 
 # general parameters
 general:
@@ -32,9 +30,12 @@ optimizer:
 lr_scheduler:
     class: 'ReduceLROnPlateau'
     kwargs:
-        patience: 75
-        threshold: 5.e-4
+        patience: 50
+        threshold: 6.e-4
         factor: 0.5
+
+init:
+    function: 'init_sharp_gaussian'
 
 
 # These hyperparameters are used for constructing the different parts of the
@@ -76,7 +77,7 @@ atomic_network:
     kwargs:
         dim_in: 384
         dims:  [128, 112, 96]
-        final_layer_bias: True
+        final_layer_bias: False
 
 # no custom class is supported for this at the moment
 energy_shifter:
