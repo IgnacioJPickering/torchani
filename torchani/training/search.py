@@ -74,6 +74,11 @@ setup_ranges = {'weight_decay' : [1e-5, 1e-7],
                 'zeta': [15., 32.], 
                 'dims': [[128, 200], [130, 115], [50, 96]]}
 
+
+def get_one_random_instance(parameter, range_):
+    return get_random_parameter_scan(parameter, range_, 1)[0]
+
+
 def get_random_parameter_scan(parameter, range_, trials):
     # given a parameter name, and some range and number of trials specification
     # this function returns an array which has trials for that parameter
