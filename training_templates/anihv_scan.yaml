@@ -23,19 +23,17 @@ loss:
 
 optimizer:
     class: 'AdamW'
-    kwargs:
-        lr: 0.001
-        betas: [0.9, 0.999]
-        weight_decay: 1.0e-7
-        amsgrad: False
-        eps: 1.0e-8
+    lr: 0.001
+    betas: [0.9, 0.999]
+    weight_decay: 1.0e-7
+    amsgrad: False
+    eps: 1.0e-8
 
 lr_scheduler:
     class: 'ReduceLROnPlateau'
-    kwargs:
-        patience: 75
-        threshold: 5.e-4
-        factor: 0.5
+    patience: 75
+    threshold: 5.e-4
+    factor: 0.5
 
 init:
     function: 'init_sharp_gaussian'
@@ -48,42 +46,37 @@ init:
 
 # no custom class is supported for this at the moment
 species_converter:
-    kwargs:
-        species: ['H', 'C', 'N', 'O']
+    species: ['H', 'C', 'N', 'O']
 
 # AEVComputer Hyperparameters
 # Note that the classmethod "cover_linearly" is called for this class, 
 # for all other classes the normal constructor is called
 aev_computer:
     class: 'AEVComputer'  
-    kwargs:
-        radial_cutoff: 5.2000e+00
-        angular_cutoff: 3.5000e+00
-        radial_eta: 16.0
-        angular_eta: 8.0
-        radial_dist_divisions: 16
-        angular_dist_divisions: 4
-        zeta: 32.0
-        angle_sections: 8
-        num_species: 4
-        radial_start: 0.9000e+00
-        angular_start: 0.9000e+00
+    radial_cutoff: 5.2000e+00
+    angular_cutoff: 3.5000e+00
+    radial_eta: 16.0
+    angular_eta: 8.0
+    radial_dist_divisions: 16
+    angular_dist_divisions: 4
+    zeta: 32.0
+    angle_sections: 8
+    num_species: 4
+    radial_start: 0.9000e+00
+    angular_start: 0.9000e+00
 
 # ANIModel Hyperparameters
 ani_model:
     class: 'ANIModelMultiple'
-    kwargs:
-        squeeze_last: True
+    squeeze_last: True
 
 # AtomicNetwork Hyperparameters
 atomic_network:
     class: 'AtomicNetworkClassic'
-    kwargs:
-        dim_in: 384
-        dims:  [128, 112, 96]
-        final_layer_bias: True
+    dim_in: 384
+    dims:  [128, 112, 96]
+    final_layer_bias: True
 
 # no custom class is supported for this at the moment
 energy_shifter:
-    kwargs:
-        num_species: 4
+    num_species: 4

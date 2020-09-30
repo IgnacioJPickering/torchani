@@ -46,22 +46,22 @@ class TemplateModel(torch.nn.Module):
             hyper = yaml_file
 
 
-        class_ani_model = getattr(modules, hyper['ani_model']['class'])
-        class_aev_computer = getattr(modules, hyper['aev_computer']['class'])
-        class_atomic_network = getattr(modules, hyper['atomic_network']['class'])
+        class_ani_model = getattr(modules, hyper['ani_model'].pop('class'))
+        class_aev_computer = getattr(modules, hyper['aev_computer'].pop('class'))
+        class_atomic_network = getattr(modules, hyper['atomic_network'].pop('class'))
         
         # this is used to ensure that all of the pieces fit together correctly
-        species = hyper['species_converter']['kwargs']['species']
-        assert len(species) == hyper['aev_computer']['kwargs']['num_species']
-        assert len(species) == hyper['energy_shifter']['kwargs']['num_species']
+        species = hyper['species_converter']['species']
+        assert len(species) == hyper['aev_computer']['num_species']
+        assert len(species) == hyper['energy_shifter']['num_species']
 
-        atomic_networks = OrderedDict([ (s, class_atomic_network(**hyper['atomic_network']['kwargs'])) for 
+        atomic_networks = OrderedDict([ (s, class_atomic_network(**hyper['atomic_network'])) for 
                 s in species])
         kwargs = {
-                'species_converter' : SpeciesConverter(**hyper['species_converter']['kwargs']), 
-                'aev_computer' : class_aev_computer.cover_linearly(**hyper['aev_computer']['kwargs']), 
-                'neural_networks' : class_ani_model(atomic_networks, **hyper['ani_model']['kwargs']), 
-                'energy_shifter' : EnergyShifter(**hyper['energy_shifter']['kwargs'])
+                'species_converter' : SpeciesConverter(**hyper['species_converter']), 
+                'aev_computer' : class_aev_computer.cover_linearly(**hyper['aev_computer']), 
+                'neural_networks' : class_ani_model(atomic_networks, **hyper['ani_model']), 
+                'energy_shifter' : EnergyShifter(**hyper['energy_shifter'])
         }
         return cls(**kwargs)
         

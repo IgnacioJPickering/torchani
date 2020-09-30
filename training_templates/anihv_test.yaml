@@ -11,7 +11,7 @@ datasets:
 # general parameters
 general:
     early_stopping_lr: 1.0e-10
-    max_epochs: 3000
+    max_epochs: 2
     use_tqdm: False
     
 init:

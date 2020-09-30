@@ -59,7 +59,7 @@ def log_per_batch(tensorboard, loss, batch_number):
     if tensorboard is not None:
         tensorboard.add_scalar('batch_loss', loss, batch_number)
 
-def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function, dataset, output_paths, use_tqdm=False, max_epochs=None, early_stopping_lr=0.0):
+def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function, dataset, output_paths, use_tqdm=False, max_epochs=None, early_stopping_lr=0.0, config=None):
     max_epochs = max_epochs if max_epochs is not None else maxsize 
 
     # If the model is already trained, just exit, else, train
@@ -132,7 +132,20 @@ def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function, d
         
         # Early stopping
         if optimizer.param_groups[0]['lr'] < early_stopping_lr:
+            print('Training finishing due to early stopping lr')
             break
+    
+    # save all hparams that are either floats or ints to tensorboard
+    hparams_dict = {}
+    for key in config.keys():
+        hparams_dict.update({f'{key}/{k}': v for k, v in config[key].items() if isinstance(v, (float, int))})
+    
+    # the hparams/ is necessary for the metrics
+    metrics_dict = {'hparams/best_validation_rmse' : lr_scheduler.best,
+            'hparams/final_validation_rmse' : validation_rmse,
+            'hparams/final_training_loss': loss}
+    tensorboard.add_hparams(hparams_dict, metrics_dict)
+    print('Training finished')
     
 
 if __name__ == '__main__':
@@ -239,9 +252,13 @@ if __name__ == '__main__':
     model.apply(init_function)
 
     # setup optimizer, scheduler and loss
-    optimizer = getattr(optim, config['optimizer']['class'])(model.parameters(), **config['optimizer']['kwargs'])
-    lr_scheduler = getattr(lr_scheduler, config['lr_scheduler']['class'])(optimizer, **config['lr_scheduler']['kwargs'])
-    loss_function = getattr(torchani.training, config['loss']['class'])()
+    Optimizer = getattr(optim, config['optimizer'].pop('class'))
+    LrScheduler = getattr(lr_scheduler, config['lr_scheduler'].pop('class'))
+    LossFunction = getattr(torchani.training, config['loss'].pop('class'))
+
+    optimizer = Optimizer(model.parameters(), **config['optimizer'])
+    lr_scheduler = LrScheduler(optimizer, **config['lr_scheduler'])
+    loss_function = LossFunction()
    
 
     # Logic for loading datasets:
@@ -298,4 +315,6 @@ if __name__ == '__main__':
             loss_function, 
             datasets,
             output_paths, 
-            **config['general'])
+            **config['general'], config=config)
+
+

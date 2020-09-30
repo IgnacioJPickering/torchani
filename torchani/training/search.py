@@ -123,18 +123,78 @@ def generate_trials(setup_ranges, trials, model_path, verbose=False):
             insert_in_key(copies[j], k, v[j])
     
     for j, c in enumerate(copies):
-        aev = c['aev_computer']['kwargs']
+        aev = c['aev_computer']
         radial_length = aev['num_species'] * aev['radial_dist_divisions']
         pairs = (aev['num_species'] * (aev['num_species'] + 1)) // 2
         angular_length = pairs * aev['angular_dist_divisions'] * aev['angle_sections']
         total_length = angular_length + radial_length
         
         # These always have to be changed for consistency between the modules 
-        c['atomic_network']['kwargs']['dim_in'] = total_length
-        num_species = len(c['species_converter']['kwargs']['species'])
-        assert c['aev_computer']['kwargs']['num_species'] == num_species
-        assert c['energy_shifter']['kwargs']['num_species'] == num_species
+        c['atomic_network']['dim_in'] = total_length
+        num_species = len(c['species_converter']['species'])
+        assert c['aev_computer']['num_species'] == num_species
+        assert c['energy_shifter']['num_species'] == num_species
     return copies
+
+import numpy as np
+import scipy
+import matplotlib.pyplot as plt
+def analyze_lr_scan(path, log=True, max_epoch=25):
+    # input is the path with the location of the lr scan
+    if isinstance(path, str):
+        path = Path(path).resolve()
+    assert path.is_dir()
+    lrs = []
+    slopes = []
+    rmses = []
+    epochs = []
+    intercepts = []
+    for trial_path in path.iterdir():
+        if trial_path.is_dir():
+            for f in trial_path.iterdir():
+                if f.suffix == '.yaml':
+                    with open(f, 'r') as file_:
+                        config = yaml.load(file_, Loader=yaml.FullLoader)
+                    lrs.append(config['optimizer']['lr'])
+                if f.suffix == '.csv':
+                    with open(f, 'r') as file_:
+                         rmse, epoch, _ = np.loadtxt(file_, unpack=True, skiprows=1)
+                    if log:
+                        rmse = np.log(rmse)
+                    try:
+                        rmse = rmse[:max_epoch]
+                        epoch = epoch[:max_epoch]
+                        assert len(epoch) == max_epoch
+                    except AssertionError:
+                        print(f'Warning, {f} has only {len(epoch)} epochs')
+                    m, b, r, _, _ =  scipy.stats.linregress(epoch, rmse)
+                    slopes.append(m)
+                    rmses.append(rmse)
+                    epochs.append(epoch)
+                    intercepts.append(b)
+    if log:
+        ylabel1 = r'$\partial$ ln (RMSE / 1 kcal/mol) / $\partial$ epoch'
+        ylabel2 = r'ln (RMSE / 1 kcal/mol)'
+    else:
+        ylabel1 = r'$\partial$ RMSE / $\partial$ epoch (kcal/mol)'
+        ylabel2 = r'RMSE (kcal/mol)'
+    fig, ax = plt.subplots(1, 2)
+    ax[0].scatter(lrs, slopes)
+    ax[0].set_xscale('log')
+    ax[0].set_xlabel(r'Learning rate, $\lambda$')
+    ax[0].set_ylabel(ylabel1)
+    colors = [plt.cm.jet(j) for j in np.linspace(0, 1, len(lrs))]
+    for lr, rmse, epoch, slope, intercept, c in zip(lrs, rmses, epochs, slopes, intercepts, colors):
+        ax[1].plot(epoch, rmse, label=f'lr = {lr}',color=c)
+        ax[1].plot(epoch, epoch * slope + intercept, color=c)
+        ax[1].set_xlabel(r'epoch number')
+        ax[1].set_ylabel(ylabel2)
+    ax[1].legend()
+    plt.show()
+        
+
+
+
     
 def dump_to_files(copies, parent_dir = '.'):
     name = copies[0]['name']
@@ -152,6 +212,9 @@ def dump_to_files(copies, parent_dir = '.'):
         with open(file_path, 'w') as f:
             # needs a very new version of yaml
             yaml.dump(c, f, sort_keys=False)
+
+if __name__ == '__main__':
+    analyze_lr_scan(Path(__file__).resolve().parent.joinpath('../../training_outputs/anihv_scan'), max_epoch=17)
 
 #setup_ranges = {'weight_decay' : [1e-7, 1e-5], 
 #                'lr': [1e-7, 1e-3], 

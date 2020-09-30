@@ -1,7 +1,7 @@
 # parameters associated with dataset
 datasets:
-    dataset_path: '/home/ignacio/Datasets/nacho_cep_tddft.h5'
-    batch_size: 512
+    dataset_path: '/home/ignacio/Datasets/ani1x_excited.h5'
+    batch_size: 1024
     split_percentage: 0.9
     nonstandard_keys : 
         species: 'species'
@@ -10,12 +10,9 @@ datasets:
 
 # general parameters
 general:
-    early_stopping_lr: 1.0e-10
+    early_stopping_lr: 1.0e-5
     max_epochs: 3000
     use_tqdm: False
-    
-init:
-    function: 'init_sharp_gaussian'
 
 loss:
     class: 'RootAtomsLoss'
@@ -30,10 +27,12 @@ optimizer:
 
 lr_scheduler:
     class: 'ReduceLROnPlateau'
-    patience: 75
+    patience: 25
     threshold: 5.e-4
     factor: 0.5
 
+init:
+    function: 'init_sharp_gaussian'
 
 
 # These hyperparameters are used for constructing the different parts of the
