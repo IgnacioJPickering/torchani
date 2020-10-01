@@ -33,31 +33,92 @@ def save_checkpoint(path, model, optimizer, lr_scheduler):
             'lr_scheduler': lr_scheduler.state_dict()
         }, path.as_posix())
 
-def log_per_epoch(tensorboard, validation_rmse, lr_scheduler, optimizer, epoch_time=None, verbose=True, csv_file=None):
+def log_per_epoch(tensorboard, main_metric, lr_scheduler, optimizer, metrics=None, epoch_time=None, verbose=True, csv_file=None):
+    # Other metrics is a dictionary with different metrics
+    main_key, main_value = main_metric.items()
+    if epoch_time is None:
+        epoch_time = 0.0
     epoch_number = lr_scheduler.last_epoch
     if verbose:
-        print(f'Validation RMSE: {validation_rmse} after epoch {lr_scheduler.last_epoch} time: {epoch_time if epoch_time is not None else 0}')
+        print(f': {main_key} {main_value} after epoch {lr_scheduler.last_epoch} time: {epoch_time if epoch_time is not None else 0}')
     if tensorboard is not None:
-        tensorboard.add_scalar('validation_rmse', validation_rmse, epoch_number)
-        tensorboard.add_scalar('best_validation_rmse', lr_scheduler.best, epoch_number)
+        tensorboard.add_scalar(f'{main_key}', main_value, epoch_number)
+        tensorboard.add_scalar(f'best_{main_key}', lr_scheduler.best, epoch_number)
         tensorboard.add_scalar('learning_rate', optimizer.param_groups[0]['lr'] , epoch_number)
+        if metrics is not None:
+            for k, v in metrics.items():
+                tensorboard.add_scalar(f'{k}', v, epoch_number)
         if epoch_time is not None:
             tensorboard.add_scalar('epoch_time', epoch_time, epoch_number)
     if csv_file is not None:
         if not csv_file.is_file():
             with open(csv_file, 'w') as f:
-                f.write('RMSE epoch time lr\n')
+                s = f'{main_key} epoch time lr'
+                if metrics is not None:
+                    for k in metrics.keys:
+                        s += f' {k}'
+                s += '\n'
+                f.write(s)
 
         with open(csv_file, 'a') as f:
-            if epoch_time is not None:
-                f.write(f'{validation_rmse} {epoch_number} {epoch_time}\n')
-            else:
-                f.write(f'{validation_rmse} {epoch_number} {0.0}\n')
+            s = f'{main_value} {epoch_number} {epoch_time}'
+            if metrics is not None:
+                for v in metrics.values():
+                    s += f' {v}'
+            s += '\n'
+            f.write(s)
 
 
-def log_per_batch(tensorboard, loss, batch_number):
+
+def log_per_batch(tensorboard, loss, batch_number, other_losses=None):
     if tensorboard is not None:
         tensorboard.add_scalar('batch_loss', loss, batch_number)
+    if other_losses is not None:
+        for j, l in enumerate(other_losses):
+            tensorboard.add_scalar(f'batch_loss_{j}', l, batch_number)
+
+
+
+def train_ground_state_loop(i, conformation, optimizer, model, loss_function, tensorboard, lr_scheduler, total_batches):
+            species = conformation['species'].to(device)
+            coordinates = conformation['coordinates'].to(device).float()
+            true_energies = conformation['energies'].to(device).float()
+    
+            # zero gradients in the parameter tensors
+            optimizer.zero_grad()
+    
+            # Forwards + backwards + optimize (every batch)
+            _, predicted_energies = model((species, coordinates))
+            loss = loss_function(predicted_energies, true_energies, species)
+            loss.backward()
+            optimizer.step()
+            
+            # Log per batch info
+            log_per_batch(tensorboard, loss, lr_scheduler.last_epoch * total_batches + i)
+
+def train_excited_state_loop(i, conformation, optimizer, model, loss_function, tensorboard, lr_scheduler, total_batches):
+            species = conformation['species'].to(device)
+            coordinates = conformation['coordinates'].to(device).float()
+            # target ground_energies is of shape (C, )
+            target_ground = conformation['energies'].to(device).float()
+            # target excited energies is of shape (C, 10)
+            target_excited = conformation['energies_ex'].to(device).float()
+            target_energies = torch.cat((target_ground.reshape(-1, 1), target_excited), dim=-1)
+            # zero gradients in the parameter tensors
+            optimizer.zero_grad()
+    
+            # Forwards + backwards + optimize (every batch)
+            # with one energy predicted energies is if shape (C, )
+            # with 10 excited energies it is of shape (C, 11) (one ground + 10 excited)
+            _, predicted_energies = model((species, coordinates))
+            # I need a loss function for excited state energies
+            loss = loss_function(predicted_energies, target_energies, species)
+            loss.backward()
+            optimizer.step()
+            
+            # Log per batch info
+            log_per_batch(tensorboard, loss, lr_scheduler.last_epoch * total_batches + i)
+
 
 def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function,
         dataset, output_paths, use_tqdm=False, max_epochs=None,
@@ -85,8 +146,8 @@ def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function,
     # afterwards rmse and logging is done after an epoch finishes
     # initial log
     if  lr_scheduler.last_epoch == 0:
-        validation_rmse = validate_energies(model, validation)
-        log_per_epoch(tensorboard, validation_rmse, lr_scheduler, optimizer, csv_file=output_paths.csv)
+        main_metric, metrics = validate_energies(model, validation)
+        log_per_epoch(tensorboard, main_metric, lr_scheduler, optimizer, csv_file=output_paths.csv, metrics=metrics)
     
     total_batches = len(training) 
     print(f"Training starting from epoch {lr_scheduler.last_epoch + 1}")
@@ -117,17 +178,17 @@ def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function,
             log_per_batch(tensorboard, loss, lr_scheduler.last_epoch * total_batches + i)
     
         # Validate (every epoch)
-        validation_rmse = validate_energies(model, validation)
+        main_metric, metrics = validate_energies(model, validation)
     
         # Step the scheduler and save the best model (every epoch)
-        if lr_scheduler.is_better(validation_rmse, lr_scheduler.best):
+        if lr_scheduler.is_better(main_metric.values()[0], lr_scheduler.best):
             save_checkpoint(output_paths.best, model, optimizer, lr_scheduler)
-        lr_scheduler.step(validation_rmse)
+        lr_scheduler.step(main_metric.values()[0])
 
         end = time.time()
     
         # Log per epoch info
-        log_per_epoch(tensorboard, validation_rmse, lr_scheduler, optimizer, end - start, csv_file=output_paths.csv)
+        log_per_epoch(tensorboard, main_metric, metrics, lr_scheduler, optimizer, end - start, csv_file=output_paths.csv, metrics=metrics)
 
         # Checkpoint
         save_checkpoint(output_paths.latest, model, optimizer, lr_scheduler)
@@ -143,10 +204,10 @@ def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function,
         hparams_dict.update({f'{key}/{k}': v for k, v in config[key].items() if isinstance(v, (float, int))})
     
     # the hparams/ is necessary for the metrics
-    metrics_dict = {'hparams/best_validation_rmse' : lr_scheduler.best,
-            'hparams/final_validation_rmse' : validation_rmse,
-            'hparams/final_training_loss': loss}
-    tensorboard.add_hparams(hparams_dict, metrics_dict)
+    metrics = {f'hparams/{k}' : v for k, v in metrics.items()}
+    main_key = main_metric.keys()[0]
+    metrics.update({f'hparams/best_{main_key}' : lr_scheduler.best})
+    tensorboard.add_hparams(hparams_dict, metrics)
     print('Training finished')
 
 def update_scan_search_config(config, scan_search, idx):
