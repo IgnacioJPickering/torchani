@@ -35,12 +35,12 @@ def save_checkpoint(path, model, optimizer, lr_scheduler):
 
 def log_per_epoch(tensorboard, main_metric, lr_scheduler, optimizer, metrics=None, epoch_time=None, verbose=True, csv_file=None):
     # Other metrics is a dictionary with different metrics
-    main_key, main_value = main_metric.items()
+    (main_key, main_value), = main_metric.items()
     if epoch_time is None:
         epoch_time = 0.0
     epoch_number = lr_scheduler.last_epoch
     if verbose:
-        print(f': {main_key} {main_value} after epoch {lr_scheduler.last_epoch} time: {epoch_time if epoch_time is not None else 0}')
+        print(f'{main_key} {main_value} after epoch {lr_scheduler.last_epoch} time: {epoch_time if epoch_time is not None else 0}')
     if tensorboard is not None:
         tensorboard.add_scalar(f'{main_key}', main_value, epoch_number)
         tensorboard.add_scalar(f'best_{main_key}', lr_scheduler.best, epoch_number)
@@ -181,14 +181,14 @@ def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function,
         main_metric, metrics = validate_energies(model, validation)
     
         # Step the scheduler and save the best model (every epoch)
-        if lr_scheduler.is_better(main_metric.values()[0], lr_scheduler.best):
+        if lr_scheduler.is_better(list(main_metric.values())[0], lr_scheduler.best):
             save_checkpoint(output_paths.best, model, optimizer, lr_scheduler)
-        lr_scheduler.step(main_metric.values()[0])
+        lr_scheduler.step(list(main_metric.values())[0])
 
         end = time.time()
     
         # Log per epoch info
-        log_per_epoch(tensorboard, main_metric, metrics, lr_scheduler, optimizer, end - start, csv_file=output_paths.csv, metrics=metrics)
+        log_per_epoch(tensorboard, main_metric, lr_scheduler, optimizer, epoch_time=end - start, csv_file=output_paths.csv, metrics=metrics)
 
         # Checkpoint
         save_checkpoint(output_paths.latest, model, optimizer, lr_scheduler)
@@ -204,8 +204,12 @@ def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function,
         hparams_dict.update({f'{key}/{k}': v for k, v in config[key].items() if isinstance(v, (float, int))})
     
     # the hparams/ is necessary for the metrics
-    metrics = {f'hparams/{k}' : v for k, v in metrics.items()}
-    main_key = main_metric.keys()[0]
+    if metrics is not None:
+        metrics = {f'hparams/{k}' : v for k, v in metrics.items()}
+    else:
+        metrics = dict()
+    (main_key, main_value), = main_metric.items()
+    metrics.update({f'hparams/{main_key}' : main_value})
     metrics.update({f'hparams/best_{main_key}' : lr_scheduler.best})
     tensorboard.add_hparams(hparams_dict, metrics)
     print('Training finished')
@@ -254,6 +258,7 @@ def load_training_configuration(yaml_path):
         original_config = copy.deepcopy(config)
         scan_search = config.pop('scan_search')
     else:
+        original_config = None
         assert 'random_search' not in config
         assert 'scan_search' not in config
     return original_config, config, random_search, scan_search, yaml_name
@@ -267,13 +272,15 @@ def get_output_paths(output_paths_raw, yaml_name):
         if random_search or scan_search:
             output_paths, idx = make_output_path_trial_dir(output_paths, yaml_name)
         else:
+            idx = None
             output_paths = output_paths.joinpath(yaml_name)
             output_paths.mkdir(parents=True, exist_ok=True)
     else:
+        idx = None
         output_paths = Path(args.output_paths).resolve()
     return output_paths, idx
 
-def dump_yaml_input(output_paths, yaml_name, random_search, scan_search):
+def dump_yaml_input(output_paths, yaml_name, random_search, scan_search, original_config):
     yaml_output = output_paths.joinpath(f'{yaml_name}.yaml')
     with open(yaml_output, 'w') as f:
         yaml.dump(config, f, sort_keys=False)
@@ -281,6 +288,7 @@ def dump_yaml_input(output_paths, yaml_name, random_search, scan_search):
     # dump the original configuration in the parent folder
     # if performing a random hyperparameter search
     if random_search or scan_search:
+        assert original_config is not None
         yaml_original_output = output_paths.parent.joinpath(f'{yaml_name}_original.yaml')
         if not yaml_original_output.is_file():
             with open(yaml_original_output, 'w') as f:
@@ -349,13 +357,15 @@ if __name__ == '__main__':
     # search, in the case of the random search a random parameter from a 
     # range is obtained
     if scan_search:
+        assert idx is not None
         update_scan_search_config(config, scan_search, idx)
 
     if random_search:
+        assert idx is not None
         update_random_search_config(config, random_search)
 
     # Paths for output (tensorboard, checkpoints and validation / training pickles)
-    dump_yaml_input(output_paths, yaml_name, random_search, scan_search)
+    dump_yaml_input(output_paths, yaml_name, random_search, scan_search, original_config)
     latest_path = output_paths.joinpath('latest.pt')
     best_path = output_paths.joinpath('best.pt')
     csv_path = output_paths.joinpath('log.csv')
