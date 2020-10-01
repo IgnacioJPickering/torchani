@@ -1,6 +1,6 @@
 import torch
 import math
-from torchani.units import hartree2kcalmol
+from torchani.units import hartree2kcalmol, hartree2ev
 
 def validate_energies(model, validation):
     # get device from an arbitrary model tensor
@@ -16,7 +16,34 @@ def validate_energies(model, validation):
         _, predicted_energies = model((species, coordinates))
         total_mse += mse_sum(predicted_energies, true_energies).item()
         count += predicted_energies.shape[0]
-    return hartree2kcalmol(math.sqrt(total_mse / count))
+    main_metric = {'validation_rmse': hartree2kcalmol(math.sqrt(total_mse / count))}
+    metrics = None
+    return main_metric, metrics
+
+def validate_energies_ex(model, validation):
+    device = model.aev_computer.ShfR.device
+    # run energy validation on a given dataset
+    mse = torch.nn.MSELoss(reduction='none')
+    total_mses = torch.zeros(model.neural_networks.num_outputs, device=device, dtype=torch.float)
+    count = 0
+    for conformation in validation:
+        species = conformation['species'].to(device)
+        coordinates = conformation['coordinates'].to(device).float()
+        target_ground = conformation['energies'].to(device).float().reshape(-1, 1)
+        target_ex = conformation['energies_ex'].to(device).float()
+        target = torch.cat((target_ground, target_ex), dim=-1)
+
+        _, predicted_energies = model((species, coordinates))
+        total_mses += mse(predicted_energies, target).sum(dim=0)
+        count += predicted_energies.shape[0]
+    rmses_hartree = torch.sqrt(total_mses / count)
+
+    average_rmse = hartree2kcalmol(rmses_hartree).mean()
+    main_metric = {'average_rmse_kcalmol': average_rmse}
+    metrics = { f'state_{j}/rmse_kcalmol': v for j, v in enumerate(hartree2kcalmol(rmses_hartree))}
+    metrics = { f'state_{j}/rmse_eV': v for j, v in enumerate(hartree2ev(rmses_hartree))}
+
+    return main_metric, metrics
 
 class RootAtomsLoss(torch.nn.Module):
 
@@ -27,6 +54,73 @@ class RootAtomsLoss(torch.nn.Module):
     def forward(self, predicted, target, species):
         num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
         return (self.mse(predicted, target) / num_atoms.sqrt()).mean()
+
+class MultiTaskLoss(torch.nn.Module):
+    # this function can be used even if the input has multiple
+    # values, in that case it just adds up the values, multiplies 
+    # them by weights (or performs an average) and outputs both the individual
+    # values and the sum as a loss
+
+    def __init__(self, weights=None, num_inputs=10):
+        super().__init__()
+        self.mse =  torch.nn.MSELoss(reduction='none')
+        if weights is not None:
+            self.register_buffer('weights', torch.tensor(weights,
+                dtype=torch.double))
+        else:
+            self.register_buffer('weights', torch.ones(num_inputs,
+                dtype=torch.double) * 1 / num_inputs)
+
+    def forward(self, predicted, target, species):
+        num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
+        squares = self.mse(predicted, target)
+        losses = (squares / num_atoms.sqrt().reshape(-1, 1)).mean(dim=0)
+        loss = (losses * self.weights).sum()
+        return  loss, losses.detach()
+
+class MultiTaskUncertaintyLoss(torch.nn.Module):
+    # this function can be used even if the input has multiple
+    # values, in that case it just adds up the values, multiplies 
+    # them by weights (or performs an average) and outputs both the individual
+    # values and the sum as a loss
+
+    def __init__(self, num_inputs=10):
+        super().__init__()
+        sigmas = torch.nn.Parameter(torch.ones(num_inputs,
+            dtype=torch.double))
+        self.mse =  torch.nn.MSELoss(reduction='none')
+        self.register_parameter('sigmas', sigmas)
+
+    def forward(self, predicted, target, species):
+        num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
+        squares = self.mse(predicted, target) 
+        losses = (squares / num_atoms.sqrt().reshape(-1, 1)).mean(dim=0)
+        loss = (losses / (2 * self.sigmas ** 2)).sum() 
+        loss = loss + torch.log(self.sigmas.prod())
+        return  loss, losses.detach()
+
+class PairwiseMultiTaskLoss(torch.nn.Module):
+    # this function can be used even if the input has multiple
+    # values, in that case it just adds up the values, multiplies 
+    # them by weights (or ones) and outputs both the individual values
+    # and the sum as a loss
+
+    def __init__(self, weights=None, num_inputs=10):
+        super().__init__()
+        self.mse =  torch.nn.MSELoss(reduction='none')
+        if weights is not None:
+            self.register_buffer('weights', torch.tensor(weights,
+                dtype=torch.double).reshape(1, -1))
+        else:
+            self.register_buffer('weights', torch.ones(num_inputs,
+                dtype=torch.double).reshape(1, -1))
+
+    def forward(self, predicted, target, species):
+        num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
+        weighted_squares = self.mse(predicted, target) * self.weights
+        losses = (weighted_squares / num_atoms.sqrt()).mean(dim=0)
+        return  losses.sum(), losses.detach()
+
 
 def init_traditional(m):
     if isinstance(m, torch.nn.Linear):
