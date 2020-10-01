@@ -59,7 +59,9 @@ def log_per_batch(tensorboard, loss, batch_number):
     if tensorboard is not None:
         tensorboard.add_scalar('batch_loss', loss, batch_number)
 
-def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function, dataset, output_paths, use_tqdm=False, max_epochs=None, early_stopping_lr=0.0, config=None):
+def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function,
+        dataset, output_paths, use_tqdm=False, max_epochs=None,
+        early_stopping_lr=0.0, config=None):
     max_epochs = max_epochs if max_epochs is not None else maxsize 
 
     # If the model is already trained, just exit, else, train
@@ -146,123 +148,84 @@ def train_ground_state_energies(model, optimizer, lr_scheduler, loss_function, d
             'hparams/final_training_loss': loss}
     tensorboard.add_hparams(hparams_dict, metrics_dict)
     print('Training finished')
-    
 
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser(description='Train a network from a yaml file configuration')
-    parser.add_argument('-d', '--dataset-path', default=None, help='Path to the dataset to train on')
-    parser.add_argument('-y', '--yaml-path', type=str, default='../../training_templates/hyper.yaml', help='Input yaml configuration')
-    parser.add_argument('-o', '--output-paths', default=None, help='Path for'
-            ' tensorboard, latest and best checkpoints, also holds pickled datasets after loading')
-    args = parser.parse_args()
-    # Yaml file Path
-    yaml_path = Path(args.yaml_path).resolve()
+def update_scan_search_config(config, scan_search, idx):
+    for parameter, range_ in scan_search.items():
+        try:
+            new_value = range_[idx]
+        except IndexError as e:
+            print('Attempted a scan search but search is already done')
+            raise e
+        insert_in_key(config, parameter, new_value)
+    return config
 
-    # Get the configuration for the training, modify the configuration 
-    # if this is a random search or a scan
-    is_random_search = False
-    is_scan_search = False
+def update_random_search_config(config, random_search):
+    for parameter, range_ in random_search.items():
+        new_value = get_one_random_instance(parameter, range_)
+        insert_in_key(config, parameter, new_value)
+
+def make_output_path_trial_dir(output_paths, yaml_name):
+    # function that creates a trial dir either for a random search or for a scan search
+    output_paths = output_paths.joinpath(yaml_name)
+    idx = 0
+    # make a new directory with a trial index
+    while True:
+        try:
+            output_paths.joinpath(f'trial_{idx}').mkdir(parents=True)
+            output_paths = output_paths.joinpath(f'trial_{idx}')
+            break
+        except FileExistsError:
+            idx += 1
+    return output_paths, idx
+
+def load_training_configuration(yaml_path):
+    if isinstance(yaml_path, str):
+        yaml_path = Path(args.yaml_path).resolve()
+    random_search = dict()
+    scan_search = dict()
     with open(yaml_path, 'r') as f:
         config = yaml.load(f, Loader=yaml.FullLoader)
     yaml_name = yaml_path.stem
     if yaml_name[-6:] == 'random':
-        is_random_search = True
         original_config = copy.deepcopy(config)
         random_search = config.pop('random_search')
-        for parameter, range_ in random_search.items():
-            new_value = get_one_random_instance(parameter, range_)
-            insert_in_key(config, parameter, new_value)
     elif yaml_name[-4:] == 'scan':
-        is_scan_search = True
         original_config = copy.deepcopy(config)
         scan_search = config.pop('scan_search')
     else:
         assert 'random_search' not in config
         assert 'scan_search' not in config
+    return original_config, config, random_search, scan_search, yaml_name
 
+def get_output_paths(output_paths_raw, yaml_name):
     if args.output_paths is None:
         # by default this is saved into a very nice folder labeled with the name
         # of the yaml file, inside training_template
         output_paths = Path(__file__).resolve().parent.parent.parent.joinpath('training_outputs/')
         # if the name ends with search, assume this is a hyperparameter search
-        if is_random_search or is_scan_search:
-            output_paths = output_paths.joinpath(yaml_name)
-            idx = 0
-            # make a new directory with a trial index
-            while True:
-                try:
-                    output_paths.joinpath(f'trial_{idx}').mkdir(parents=True)
-                    output_paths = output_paths.joinpath(f'trial_{idx}')
-                    break
-                except FileExistsError:
-                    idx += 1
+        if random_search or scan_search:
+            output_paths, idx = make_output_path_trial_dir(output_paths, yaml_name)
         else:
             output_paths = output_paths.joinpath(yaml_name)
             output_paths.mkdir(parents=True, exist_ok=True)
     else:
         output_paths = Path(args.output_paths).resolve()
-    
-    # move to the next available parameter for all values in the scan search
-    if is_scan_search:
-        for parameter, range_ in scan_search.items():
-            try:
-                new_value = range_[idx]
-            except IndexError as e:
-                print('Attempted a scan search but search is already done')
-                raise e
-            insert_in_key(config, parameter, new_value)
+    return output_paths, idx
 
-    # Paths for output (tensorboard, checkpoints and validation / training pickles)
+def dump_yaml_input(output_paths, yaml_name, random_search, scan_search):
     yaml_output = output_paths.joinpath(f'{yaml_name}.yaml')
     with open(yaml_output, 'w') as f:
         yaml.dump(config, f, sort_keys=False)
 
     # dump the original configuration in the parent folder
     # if performing a random hyperparameter search
-    if is_random_search or is_scan_search:
+    if random_search or scan_search:
         yaml_original_output = output_paths.parent.joinpath(f'{yaml_name}_original.yaml')
         if not yaml_original_output.is_file():
             with open(yaml_original_output, 'w') as f:
                 yaml.dump(original_config, f, sort_keys=False)
 
-    latest_path = output_paths.joinpath('latest.pt')
-    best_path = output_paths.joinpath('best.pt')
-    csv_path = output_paths.joinpath('log.csv')
-    if is_random_search or is_scan_search:
-        # use the parent folder as a store for the pickled datasets, TODO:
-        # WARNING! watch out, this can create issues if many processes are
-        # started simultaneously and the datasets have not been pickled yet, 
-        # in that case all processes will start to create different pickled
-        # splits and they will overwrite the files each time one finishes
-        dataset_pkl_path = output_paths.parent.joinpath('dataset.pkl')
-    else:
-        dataset_pkl_path = output_paths.joinpath('dataset.pkl')
-
-    tensorboard_path = output_paths
-    OutputPaths = namedtuple('OutputPaths', 'tensorboard best latest dataset_pkl csv')
-    output_paths = OutputPaths(best=best_path, latest=latest_path,
-            tensorboard=tensorboard_path, dataset_pkl=dataset_pkl_path, csv=csv_path)
-    
-    # setup model and initialize parameters
-    # setting shift before output to false makes the model NOT add saes before output
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = TemplateModel.from_yaml(config).to(device).shift_before_output_(False)
-    init_function = getattr(torchani.training, config['init']['function'])
-    model.apply(init_function)
-
-    # setup optimizer, scheduler and loss
-    Optimizer = getattr(optim, config['optimizer'].pop('class'))
-    LrScheduler = getattr(lr_scheduler, config['lr_scheduler'].pop('class'))
-    LossFunction = getattr(torchani.training, config['loss'].pop('class'))
-
-    optimizer = Optimizer(model.parameters(), **config['optimizer'])
-    lr_scheduler = LrScheduler(optimizer, **config['lr_scheduler'])
-    loss_function = LossFunction()
-   
-
-    # Logic for loading datasets:
-    # setup training and validation sets
+def load_datasets(config, output_paths, dataset_path_raw, model):
     Datasets = namedtuple('Datasets', 'training validation test')
     # fetch dataset path from input arguments or from configuration file 
     if output_paths.dataset_pkl.is_file():
@@ -299,11 +262,77 @@ if __name__ == '__main__':
                 pickled_dataset = pickle.load(f)
                 training = pickled_dataset['training']
                 validation = pickled_dataset['validation']
-
     training = training.pin_memory()
     validation = validation.pin_memory()
 
     datasets = Datasets(training=training, validation=validation, test=None)
+    return datasets
+    
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='Train a network from a yaml file configuration')
+    parser.add_argument('-y', '--yaml-path', type=str, required=True, help='Input yaml configuration')
+    parser.add_argument('-d', '--dataset-path', default=None, help='Path to the dataset to train on')
+    parser.add_argument('-o', '--output-paths', default=None, help='Path for'
+            ' tensorboard, latest and best checkpoints, also holds pickled'
+            ' datasets after loading, if the dataset path is an h5 file')
+    args = parser.parse_args()
+
+    # Get the configuration for the training
+    original_config, config, random_search, scan_search, yaml_name = load_training_configuration(args.yaml_path)
+
+    output_paths, idx = get_output_paths(args.output_paths, yaml_name)
+    
+    # move to the next available parameter for all values in the scan or random
+    # search, in the case of the random search a random parameter from a 
+    # range is obtained
+    if scan_search:
+        update_scan_search_config(config, scan_search, idx)
+
+    if random_search:
+        update_random_search_config(config, random_search)
+
+    # Paths for output (tensorboard, checkpoints and validation / training pickles)
+    dump_yaml_input(output_paths, yaml_name, random_search, scan_search)
+    latest_path = output_paths.joinpath('latest.pt')
+    best_path = output_paths.joinpath('best.pt')
+    csv_path = output_paths.joinpath('log.csv')
+
+    # use the parent folder as a store for the pickled datasets, TODO:
+    # WARNING! watch out, this can create issues if many processes are
+    # started simultaneously and the datasets have not been pickled yet, 
+    # in that case all processes will start to create different pickled
+    # splits and they will overwrite the files each time one finishes
+    if random_search or scan_search:
+        dataset_pkl_path = output_paths.parent.joinpath('dataset.pkl')
+    else:
+        dataset_pkl_path = output_paths.joinpath('dataset.pkl')
+
+    tensorboard_path = output_paths
+    OutputPaths = namedtuple('OutputPaths', 'tensorboard best latest dataset_pkl csv')
+    output_paths = OutputPaths(best=best_path, latest=latest_path,
+            tensorboard=tensorboard_path, dataset_pkl=dataset_pkl_path, csv=csv_path)
+    
+    # setup model and initialize parameters
+    # setting shift before output to false makes the model NOT add saes before output
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = TemplateModel.from_yaml(config).to(device).shift_before_output_(False)
+    init_function = getattr(torchani.training, config['init']['function'])
+    model.apply(init_function)
+
+    # setup optimizer, scheduler and loss
+    Optimizer = getattr(optim, config['optimizer'].pop('class'))
+    LrScheduler = getattr(lr_scheduler, config['lr_scheduler'].pop('class'))
+    LossFunction = getattr(torchani.training, config['loss'].pop('class'))
+
+    optimizer = Optimizer(model.parameters(), **config['optimizer'])
+    lr_scheduler = LrScheduler(optimizer, **config['lr_scheduler'])
+    loss_function = LossFunction()
+   
+    # Logic for loading datasets, setup training and validation sets and add
+    # stuff to EnergyShifter
+    datasets = load_datasets(config, output_paths, args.dataset_path, model)
     
     # load model parameters from checkpoint if it exists
     load_from_checkpoint(output_paths.latest, model, optimizer, lr_scheduler)
