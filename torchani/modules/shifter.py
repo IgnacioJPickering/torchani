@@ -10,9 +10,9 @@ class EnergyShifter(torch.nn.Module):
         super().__init__()
 
         if self_energies is None and num_outputs == 1:
-            self.energies = torch.zeros(num_species, dtype=torch.double)
+            self_energies = torch.zeros(num_species, dtype=torch.double)
         elif self_energies is None and num_outputs > 0:
-            self.energies = torch.zeros((num_species, num_outputs), dtype=torch.double)
+            self_energies = torch.zeros((num_species, num_outputs), dtype=torch.double)
         else:
             self_energies = torch.tensor(self_energies, dtype=torch.double)
 
