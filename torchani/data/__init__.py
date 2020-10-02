@@ -105,7 +105,8 @@ PADDING = {
     'species': -1,
     'coordinates': 0.0,
     'forces': 0.0,
-    'energies': 0.0
+    'energies': 0.0, 
+    'energies_ex': 0.0
 }
 
 
@@ -168,7 +169,7 @@ class Transformations:
             return IterableAdapter(reenterable_iterable_factory)
 
     @staticmethod
-    def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None, fit_intercept=False):
+    def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None, fit_intercept=False, ex_key=None):
         intercept = 0.0
         shape_inference = False
         if isinstance(self_energies, (utils.EnergyShifter, modules.EnergyShifter)):
@@ -179,6 +180,8 @@ class Transformations:
             self_energies = {}
             counts = {}
             Y = []
+            if ex_key is not None:
+                Yx = []
             for n, d in enumerate(reenterable_iterable):
                 species = d['species']
                 count = Counter()
@@ -192,6 +195,8 @@ class Transformations:
                     if len(counts[s]) != n + 1:
                         counts[s].append(0)
                 Y.append(d['energies'])
+                if ex_key is not None:
+                    Yx.append(d[ex_key])
 
             # sort based on the order in periodic table by default
             if species_order is None:
@@ -204,12 +209,20 @@ class Transformations:
                 X.append([1] * n)
             X = numpy.array(X).transpose()
             Y = numpy.array(Y)
-            sae, _, _, _ = numpy.linalg.lstsq(X, Y, rcond=None)
+            if ex_key is not None:
+                Yx = numpy.array(Yx)
+                Y_total = numpy.concatenate((Y.reshape(-1, 1), Yx), axis=-1)
+                sae, _, _, _ = numpy.linalg.lstsq(X, Y_total, rcond=None)
+            else:
+                sae, _, _, _ = numpy.linalg.lstsq(X, Y, rcond=None)
             sae_ = sae
             if fit_intercept:
+                assert ex_key is None
                 intercept = sae[-1]
                 sae_ = sae[:-1]
             for s, e in zip(species, sae_):
+                if isinstance(e, numpy.ndarray):
+                    e = e.tolist()
                 self_energies[s] = e
             if isinstance(shifter, utils.EnergyShifter):
                 shifter.__init__(sae, shifter.fit_intercept)
@@ -223,9 +236,16 @@ class Transformations:
         def reenterable_iterable_factory():
             for d in reenterable_iterable:
                 e = intercept
+                ex = intercept
                 for s in d['species']:
-                    e += self_energies[s]
+                    if ex_key is None:
+                        e += self_energies[s]
+                    else:
+                        e += self_energies[s][0]
+                        ex += numpy.asarray(self_energies[s][1:])
                 d['energies'] -= e
+                if ex_key is not None:
+                    d[ex_key] = numpy.asarray(d[ex_key]) - ex
                 yield d
         if shape_inference:
             return IterableAdapterWithLength(reenterable_iterable_factory, n)
