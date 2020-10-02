@@ -6,13 +6,16 @@ from typing import Tuple, Optional
 
 class EnergyShifter(torch.nn.Module):
     """Modified Energy Shifter class that is more reasonable"""
-    def __init__(self, self_energies=None, intercept=0.0, num_species=1):
+    def __init__(self, self_energies=None, intercept=0.0, num_species=1, num_outputs=1):
         super().__init__()
 
-        if self_energies is None:
-            self_energies = [0.0] * num_species
+        if self_energies is None and num_outputs == 1:
+            self.energies = torch.zeros(num_species, dtype=torch.double)
+        elif self_energies is None and num_outputs > 0:
+            self.energies = torch.zeros((num_species, num_outputs), dtype=torch.double)
+        else:
+            self_energies = torch.tensor(self_energies, dtype=torch.double)
 
-        self_energies = torch.tensor(self_energies, dtype=torch.double)
         intercept = torch.tensor(intercept, dtype=torch.double)
 
         self.register_buffer('self_energies',
@@ -61,6 +64,11 @@ class EnergyShifter(torch.nn.Module):
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         """(species, molecular energies)->(species, molecular energies + sae)
         """
+        # even if energies is of shape (C, X) this ends up working perfectly fine
+        # the only issue in that case is that intercept should be an array
+        # of the correct shape also, if used. 
+        # the important point in any case is to have the correct (S, X)
+        # shape for self_energies
         species, energies = species_energies
         self_energies = self.self_energies[species]
         # set to zero all self energies of the dummy atoms
@@ -70,3 +78,4 @@ class EnergyShifter(torch.nn.Module):
 
     def extra_repr(self):
         return f'self_energies={self.self_energies.detach().cpu().numpy()}, intercept={self.intercept}'
+
