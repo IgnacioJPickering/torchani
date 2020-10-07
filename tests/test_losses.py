@@ -33,7 +33,7 @@ class TestLosses(unittest.TestCase):
         species = torch.ones(40, dtype=torch.float).reshape(10, -1)
         loss_function = training.MultiTaskUncertaintyLoss(num_inputs=target.shape[-1])
         loss, losses = loss_function(predicted, target, species)
-        self.assertTrue(loss_function.sigmas[0].item() == 1)
+        self.assertTrue(loss_function.log_sigmas_squared[0].item() == 0)
         self.assertTrue(loss.item() == 1.250)
         self.assertTrue(losses.mean().item() == 0.5)
         self.assertTrue(loss.requires_grad)
