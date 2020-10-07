@@ -46,6 +46,8 @@ def insert_in_key(dict_, key, value):
     # this will find the fist key in a nested dictionary
     # that matches the wanted key and change the value there
     for k, v in dict_.items():
+        # skip optimizer_loss for now
+        if k == 'optimizer_loss': continue
         if isinstance(v, dict):
             key_found = insert_in_key(v, key, value)
             if key_found: 
@@ -158,7 +160,7 @@ def analyze_lr_scan(path, log=True, max_epoch=25):
                     lrs.append(config['optimizer']['lr'])
                 if f.suffix == '.csv':
                     with open(f, 'r') as file_:
-                         rmse, epoch, _ = np.loadtxt(file_, unpack=True, skiprows=1)
+                         rmse, epoch, _ = np.loadtxt(file_, unpack=True, skiprows=1, usecols=(0, 1, 2))
                     if log:
                         rmse = np.log(rmse)
                     try:
@@ -179,10 +181,11 @@ def analyze_lr_scan(path, log=True, max_epoch=25):
         ylabel1 = r'$\partial$ RMSE / $\partial$ epoch (kcal/mol)'
         ylabel2 = r'RMSE (kcal/mol)'
     fig, ax = plt.subplots(1, 2)
-    ax[0].scatter(lrs, slopes)
     ax[0].set_xscale('log')
+    ax[0].scatter(lrs, slopes)
     ax[0].set_xlabel(r'Learning rate, $\lambda$')
     ax[0].set_ylabel(ylabel1)
+
     colors = [plt.cm.jet(j) for j in np.linspace(0, 1, len(lrs))]
     for lr, rmse, epoch, slope, intercept, c in zip(lrs, rmses, epochs, slopes, intercepts, colors):
         ax[1].plot(epoch, rmse, label=f'lr = {lr}',color=c)
@@ -192,10 +195,6 @@ def analyze_lr_scan(path, log=True, max_epoch=25):
     ax[1].legend()
     plt.show()
         
-
-
-
-    
 def dump_to_files(copies, parent_dir = '.'):
     name = copies[0]['name']
     for c in copies:
@@ -214,13 +213,12 @@ def dump_to_files(copies, parent_dir = '.'):
             yaml.dump(c, f, sort_keys=False)
 
 if __name__ == '__main__':
-    analyze_lr_scan(Path(__file__).resolve().parent.joinpath('../../training_outputs/anihv_scan'), max_epoch=17)
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('path', type=str, help='Path to analyze learning rate scan')
+    parser.add_argument('-m', '--max-epoch', default=20, type=int, help='Maximum epoch to take into account for linear regression')
+    args = parser.parse_args()
+    path = args.path
+    max_epoch = args.max_epoch
+    analyze_lr_scan(Path(path).resolve(), max_epoch=max_epoch)
 
-#setup_ranges = {'weight_decay' : [1e-7, 1e-5], 
-#                'lr': [1e-7, 1e-3], 
-#                'dims': [[128, 170], [113, 125], [123, 150]]}
-#trials = 4
-#
-#copies = generate_trials(setup_ranges, trials, './hyper.yaml')
-#dump_to_files(copies)
-#
