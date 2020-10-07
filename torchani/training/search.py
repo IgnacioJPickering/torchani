@@ -46,8 +46,10 @@ def insert_in_key(dict_, key, value):
     # this will find the fist key in a nested dictionary
     # that matches the wanted key and change the value there
     for k, v in dict_.items():
-        # skip optimizer_loss for now
-        if k == 'optimizer_loss': continue
+        # skip optimizer_loss for now, except if the key is 'loss_lr'
+        if k == 'optimizer_loss' and key != 'loss_lr': continue
+        if k == 'optimizer_loss' and key == 'loss_lr':
+            key = 'lr'
         if isinstance(v, dict):
             key_found = insert_in_key(v, key, value)
             if key_found: 

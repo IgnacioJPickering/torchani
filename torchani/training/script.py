@@ -72,12 +72,12 @@ class Trainer:
        self.log_per_batch(loss, batch_number)
     
     def excited_state_loop(self, batch_number, conformation):
-        species = conformation['species'].to(self.device)
-        coordinates = conformation['coordinates'].to(self.device).float()
+        species = conformation['species'].to(self.device, non_blocking=True)
+        coordinates = conformation['coordinates'].to(self.device, non_blocking=True).float()
         # target ground_energies is of shape (C, )
-        target_ground = conformation['energies'].to(self.device).float()
+        target_ground = conformation['energies'].to(self.device, non_blocking=True).float()
         # target excited energies is of shape (C, 10)
-        target_excited = conformation['energies_ex'].to(self.device).float()
+        target_excited = conformation['energies_ex'].to(self.device, non_blocking=True).float()
         target_energies = torch.cat((target_ground.reshape(-1, 1), target_excited), dim=-1)
         # zero gradients in the parameter tensors
         self.optimizer.zero_grad()
@@ -228,6 +228,7 @@ def update_scan_search_config(config, scan_search, idx):
             print('Attempted a scan search but search is already done')
             raise e
         insert_in_key(config, parameter, new_value)
+        print(f'Using {new_value} for {parameter} in scan search')
     return config
 
 def update_random_search_config(config, random_search):

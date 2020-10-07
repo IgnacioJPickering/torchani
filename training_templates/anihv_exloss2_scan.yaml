@@ -1,5 +1,5 @@
 scan_search:
-    weight_decay: [1.0e-9, 1.0e-8, 1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4, 1.0e-3, 1.0e-2, 1.0e-1, 0.0]
+    loss_lr: [1.0e-4, 1.0e-5, 1.0e-6, 1.0e-7, 1.0e-8, 1.0e-9]
 
 # parameters associated with dataset
 datasets:
@@ -15,7 +15,7 @@ datasets:
 # general parameters
 general:
     early_stopping_lr: 1.0e-10
-    max_epochs: 100
+    max_epochs: 200
     use_tqdm: True
     loop: 'excited_state_loop'
     
@@ -28,7 +28,7 @@ loss:
     num_inputs: 11
 
 optimizer_loss:
-    lr: 0.0001
+    lr: 1.0e-5
     weight_decay: 0.0
 
 optimizer:
