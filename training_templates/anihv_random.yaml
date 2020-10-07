@@ -35,6 +35,7 @@ lr_scheduler:
     threshold: 5.e-4
     factor: 0.5
 
+validation_function: 'validate_energies'
 init:
     function: 'init_sharp_gaussian'
 
@@ -68,8 +69,7 @@ aev_computer:
 # ANIModel Hyperparameters
 ani_model:
     class: 'ANIModelMultiple'
-    kwargs:
-        squeeze_last: True
+    squeeze_last: True
 
 # AtomicNetwork Hyperparameters
 atomic_network:

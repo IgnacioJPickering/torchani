@@ -14,6 +14,7 @@ general:
     max_epochs: 3000
     use_tqdm: False
     
+validation_function: 'validate_energies'
 init:
     function: 'init_sharp_gaussian'
 

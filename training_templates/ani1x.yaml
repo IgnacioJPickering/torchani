@@ -32,6 +32,7 @@ lr_scheduler:
     threshold: 5.e-4
     factor: 0.5
 
+validation_function: 'validate_energies'
 init:
     function: 'init_traditional'
 
