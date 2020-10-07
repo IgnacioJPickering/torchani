@@ -28,7 +28,7 @@ class ANIModelMultiple(ANIModel):
     to directly modify BuiltinModel, or wrap stuff inside Sequential
     """
 
-    def __init__(self, modules, shared_module=None, number_outputs=1, squeeze_last=False):
+    def __init__(self, modules, shared_module=None, num_outputs=1, squeeze_last=False):
         # output can get squeezed if necessary for compatibility with normal
         # torchani
 
@@ -38,12 +38,12 @@ class ANIModelMultiple(ANIModel):
         else:
             self.shared_module = torch.nn.Identity()
 
-        if squeeze_last and number_outputs == 1:
+        if squeeze_last and num_outputs == 1:
             self.squeezer = Squeezer()
         else:
             self.squeezer = torch.nn.Identity()
 
-        self.number_outputs=number_outputs
+        self.num_outputs=num_outputs
 
     @classmethod
     def like_ani1x(cls):
@@ -75,7 +75,7 @@ class ANIModelMultiple(ANIModel):
         #shape of AEV is C x A, other
         aev = aev.flatten(0, 1)
         # shape of output will be (C x A, O)
-        output = aev.new_zeros((species_.shape[0], self.number_outputs))
+        output = aev.new_zeros((species_.shape[0], self.num_outputs))
     
         # optionally a pass through a shared model is performed
         aev = self.shared_module(aev)
@@ -84,7 +84,7 @@ class ANIModelMultiple(ANIModel):
             midx = mask.nonzero().flatten()
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
-                mask = mask.unsqueeze(-1).repeat(1,self.number_outputs)
+                mask = mask.unsqueeze(-1).repeat(1,self.num_outputs)
                 output.masked_scatter_(mask, m(input_))
         output = output.reshape((*species.shape, -1))
         output = self.squeezer(output)
