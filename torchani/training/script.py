@@ -13,7 +13,7 @@ from tqdm import tqdm
 import torchani
 from torchani import data
 from torchani.modules import TemplateModel
-from torchani.training import get_one_random_instance, insert_in_key
+from torchani.training import get_one_random_instance, insert_in_key, move_settings_to_index
 
 from torch import optim
 from torch.optim import lr_scheduler
@@ -70,6 +70,85 @@ class Trainer:
        
        # Log per batch info
        self.log_per_batch(loss, batch_number)
+
+    def excited_state_and_dipoles_loop(self, batch_number, conformation):
+        species = conformation['species'].to(self.device, non_blocking=True)
+        coordinates = conformation['coordinates'].to(self.device, non_blocking=True).float()
+        # target ground_energies is of shape (C, )
+        target_ground = conformation['energies'].to(self.device, non_blocking=True).float()
+        target_ground_dipoles = conformation['dipoles'].to(self.device, non_blocking=True).float()
+        # target excited energies is of shape (C, 10)
+        target_excited = conformation['energies_ex'].to(self.device, non_blocking=True).float()
+        # TODO: Check if dipoles are in the correct order when inside the dataset
+        target_excited_dipoles = conformation['dipoles_ex'].to(self.device, non_blocking=True).float().permute(0, 2, 1) 
+        target_energies = torch.cat((target_ground.reshape(-1, 1), target_excited), dim=-1)
+        target_dipoles = torch.cat((target_ground_dipoles.unsqueeze(-1), target_excited_dipoles), dim=-1)
+        # zero gradients in the parameter tensors
+        self.optimizer.zero_grad()
+        
+        # Forwards + backwards + optimize (every batch)
+        # with one energy predicted energies is if shape (C, )
+        # with 10 excited energies it is of shape (C, 11) (one ground + 10 excited)
+        _, predicted_energies, predicted_dipoles = self.model((species, coordinates))
+        # I need a loss function for excited state energies
+        # note that this loss takes in energies AND dipoles!
+        loss, losses = self.loss_function(predicted_energies, target_energies, predicted_dipoles, target_dipoles, species)
+        loss.backward()
+        self.optimizer.step()
+        
+        # Log per batch info
+        self.log_per_batch(loss, batch_number, other=losses)
+
+    def excited_state_and_excited_foscs(self, batch_number, conformation):
+        species = conformation['species'].to(self.device, non_blocking=True)
+        coordinates = conformation['coordinates'].to(self.device, non_blocking=True).float()
+        # target ground_energies is of shape (C, )
+        target_ground = conformation['energies'].to(self.device, non_blocking=True).float()
+        # target excited energies is of shape (C, 10)
+        target_excited = conformation['energies_ex'].to(self.device, non_blocking=True).float()
+        target_foscs = conformation['foscs'].to(self.device, non_blocking=True).float()
+        target_energies = torch.cat((target_ground.reshape(-1, 1), target_excited), dim=-1)
+        # zero gradients in the parameter tensors
+        self.optimizer.zero_grad()
+        
+        # Forwards + backwards + optimize (every batch)
+        # with one energy predicted energies is if shape (C, )
+        # with 10 excited energies it is of shape (C, 11) (one ground + 10 excited)
+        _, predicted_energies, predicted_foscs = self.model((species, coordinates))
+        # I need a loss function for excited state energies
+        # note that this loss takes in energies AND dipoles!
+        loss, losses = self.loss_function(predicted_energies, target_energies, predicted_foscs, target_foscs, species)
+        loss.backward()
+        self.optimizer.step()
+        
+        # Log per batch info
+        self.log_per_batch(loss, batch_number, other=losses)
+
+    def excited_state_and_excited_sqdipoles(self, batch_number, conformation):
+        species = conformation['species'].to(self.device, non_blocking=True)
+        coordinates = conformation['coordinates'].to(self.device, non_blocking=True).float()
+        # target ground_energies is of shape (C, )
+        target_ground = conformation['energies'].to(self.device, non_blocking=True).float()
+        # target excited energies is of shape (C, 10)
+        target_excited = conformation['energies_ex'].to(self.device, non_blocking=True).float()
+        # TODO: Check if dipoles are in the correct order when inside the dataset
+        target_excited_sqdipoles = conformation['sqdipoles_ex'].to(self.device, non_blocking=True).float()
+        target_energies = torch.cat((target_ground.reshape(-1, 1), target_excited), dim=-1)
+        # zero gradients in the parameter tensors
+        self.optimizer.zero_grad()
+        
+        # Forwards + backwards + optimize (every batch)
+        # with one energy predicted energies is if shape (C, )
+        # with 10 excited energies it is of shape (C, 11) (one ground + 10 excited)
+        _, predicted_energies, predicted_sqdipoles = self.model((species, coordinates))
+        # I need a loss function for excited state energies
+        # note that this loss takes in energies AND dipoles!
+        loss, losses = self.loss_function(predicted_energies, target_energies, predicted_sqdipoles, target_excited_sqdipoles, species)
+        loss.backward()
+        self.optimizer.step()
+        
+        # Log per batch info
+        self.log_per_batch(loss, batch_number, other=losses)
     
     def excited_state_loop(self, batch_number, conformation):
         species = conformation['species'].to(self.device, non_blocking=True)
@@ -197,9 +276,25 @@ class Trainer:
             self.tensorboard.add_scalar(f'{main_key}', main_value, epoch_number)
             self.tensorboard.add_scalar(f'best_{main_key}', self.lr_scheduler.best, epoch_number)
             self.tensorboard.add_scalar('learning_rate', self.optimizer.param_groups[0]['lr'] , epoch_number)
+            if self.hparams.get('aev_computer/trainable_etas'):
+                for j, v in enumerate(self.model.aev_computer.EtaR):
+                    self.tensorboard.add_scalar(f'aev/EtaR_{j}', v, epoch_number)
+                for j, v in enumerate(self.model.aev_computer.EtaA.view(-1)):
+                    self.tensorboard.add_scalar(f'aev/EtaA_{j}', v, epoch_number)
+            if self.hparams.get('aev_computer/trainable_shifts') or self.hparams.get('aev_computer/trainable_radial_shifts'):
+                for j, v in enumerate(self.model.aev_computer.ShfR.view(-1)):
+                    self.tensorboard.add_scalar(f'aev/ShfR_{j}', v, epoch_number)
+            if self.hparams.get('aev_computer/trainable_shifts') or self.hparams.get('aev_computer/trainable_angular_shifts'):
+                for j, v in enumerate(self.model.aev_computer.ShfA.view(-1)):
+                    self.tensorboard.add_scalar(f'aev/ShfA_{j}', v, epoch_number)
+            if self.hparams.get('aev_computer/trainable_shifts') or self.hparams.get('aev_computer/trainable_angle_sections'):
+                for j, v in enumerate(self.model.aev_computer.ShfZ.view(-1)):
+                    self.tensorboard.add_scalar(f'aev/ShfZ_{j}', v, epoch_number)
+
             if metrics is not None:
                 for k, v in metrics.items():
                     self.tensorboard.add_scalar(f'{k}', v, epoch_number)
+            
             if epoch_time is not None:
                 self.tensorboard.add_scalar('epoch_time', epoch_time, epoch_number)
         if self.output_paths.csv is not None:
@@ -219,17 +314,6 @@ class Trainer:
                         s += f' {v}'
                 s += '\n'
                 f.write(s)
-
-def update_scan_search_config(config, scan_search, idx):
-    for parameter, range_ in scan_search.items():
-        try:
-            new_value = range_[idx]
-        except IndexError as e:
-            print('Attempted a scan search but search is already done')
-            raise e
-        insert_in_key(config, parameter, new_value)
-        print(f'Using {new_value} for {parameter} in scan search')
-    return config
 
 def update_random_search_config(config, random_search):
     for parameter, range_ in random_search.items():
@@ -355,8 +439,7 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(
                    description='Train a network from a yaml file configuration')
-    parser.add_argument('-y', '--yaml-path', type=str, required=True,
-                        help='Input yaml configuration')
+    parser.add_argument('yaml_path', type=str, help='Input yaml configuration')
     parser.add_argument('-d', '--dataset-path', default=None, help='Path to the'
                         ' dataset to train on')
     parser.add_argument('-o', '--output-paths', default=None, help='Path for'
@@ -376,7 +459,7 @@ if __name__ == '__main__':
     if scan_search:
         # idx is needed for this
         assert idx is not None
-        update_scan_search_config(config, scan_search, idx)
+        move_settings_to_index(config, scan_search, idx)
 
     if random_search:
         # idx is not needed here but must have been calculated
@@ -419,9 +502,13 @@ if __name__ == '__main__':
     LossFunction = getattr(torchani.training, config['loss'].pop('class'))
 
     loss_function = LossFunction(**config['loss']).to(device)
-     
-    model_params = dict(params= model.parameters(), **config['optimizer'])
+
+    model_params = dict(params= model.neural_networks.parameters(), **config['optimizer'])
     optimizer_configuration = [model_params]
+
+    if list(model.aev_computer.parameters()):
+        aev_params = dict(params= model.aev_computer.parameters(), **config['optimizer_aev'])
+        optimizer_configuration.append(aev_params)
 
     if list(loss_function.parameters()):
         loss_params = dict(params= loss_function.parameters(), **config['optimizer_loss'])
