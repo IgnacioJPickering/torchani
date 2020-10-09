@@ -59,6 +59,24 @@ def insert_in_key(dict_, key, value):
             return True
     return False
 
+def move_settings_to_index(dict_, new_settings_dict, idx):
+    # moves all settings in dict_ to the settings
+    # specified in new_settings_dict, in the index idx
+    length = 0
+    for k, settings in new_settings_dict.items():
+        assert isinstance(settings, dict)
+        for s, v in settings.items():
+            assert isinstance(v, list), "All values in settings should be lists"
+            if length == 0: length = len(v)
+            assert len(v) == length, "All values in settings should have the same length"
+            try:
+                dict_[k][s] = v[idx]
+            except IndexError as e:
+                print(f"Attempted scan search with index {idx} but it is already complete")
+                raise e
+        print(f'Using {v[idx]} for [{k}][{s}] in scan search')
+    return dict_
+
 # the hyperparameter search setup is saved in a dictionary 
 # with bounds, if the search is linear or logarithmic, integer or a list of
 # ints
