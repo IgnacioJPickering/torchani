@@ -1,40 +1,26 @@
-scan_search:
-    optimizer_loss:
-        lr: [1.0e-4, 1.0e-5, 1.0e-6, 1.0e-7, 1.0e-8, 1.0e-9]
-
 # parameters associated with dataset
 datasets:
-    dataset_path: '/home/ignacio/Datasets/nacho_cep_tddft.h5'
-    batch_size: 1024
-    split_percentage: 0.9
+    # this is the ANI1x released dataset
+    dataset_path: '/home/ignacio/Datasets/ani1x_release.pkl'
+    batch_size: 2048
+    split_percentage: 0.8
     nonstandard_keys : 
         species: 'species'
         coordinates: 'coordinates'
-        energies: 'scf_energy'
-        energies_ex: 'energies_ex'
+        energies: 'energies'
 
 # general parameters
 general:
     early_stopping_lr: 1.0e-10
-    max_epochs: 200
-    use_tqdm: True
-    loop: 'excited_state_loop'
-    
-validation_function: 'validate_energies_ex'
-init:
-    function: 'init_sharp_gaussian'
+    max_epochs: 3000
+    use_tqdm: False
 
 loss:
-    class: 'MultiTaskUncertaintyLoss'
-    num_inputs: 11
-
-optimizer_loss:
-    lr: 1.0e-5
-    weight_decay: 0.0
+    class: 'RootAtomsLoss'
 
 optimizer:
     class: 'AdamW'
-    lr: 0.0001  # this seems fine based on hparam search of lr's
+    lr: 0.0001
     betas: [0.9, 0.999]
     weight_decay: 1.0e-7
     amsgrad: False
@@ -42,10 +28,14 @@ optimizer:
 
 lr_scheduler:
     class: 'ReduceLROnPlateau'
-    patience: 75
-    threshold: 5.e-4
+    patience: 40
+    threshold: 6.e-4
     factor: 0.5
 
+validation_function: 'validate_energies'
+
+init:
+    function: 'init_sharp_gaussian'
 
 
 # These hyperparameters are used for constructing the different parts of the
@@ -72,22 +62,20 @@ aev_computer:
     num_species: 4
     radial_start: 0.9000e+00
     angular_start: 0.9000e+00
+    trainable_etas: True
+    trainable_zeta: True
 
 # ANIModel Hyperparameters
 ani_model:
     class: 'ANIModelMultiple'
-    squeeze_last: False
-    num_outputs: 11
+    squeeze_last: True
 
 # AtomicNetwork Hyperparameters
 atomic_network:
-    class: 'AtomicNetworkSpecFlexMultiple'
+    class: 'AtomicNetworkAttention'
     dim_in: 384
-    dims_shared:  [192, 96]
-    dims_specific: [96, 96]
-    num_outputs: 11
+    num_heads: 3
 
 # no custom class is supported for this at the moment
 energy_shifter:
     num_species: 4
-    num_outputs: 11

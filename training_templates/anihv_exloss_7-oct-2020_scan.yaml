@@ -1,6 +1,7 @@
 scan_search:
-    dims_shared:  [[192, 96], [192, 96, 96], [192, 96, 52],[192, 96, 96] ]
-    dims_specific: [[52, 52], [52, 52], [52, 52], [96, 96, 96, 96]]
+    atomic_network:
+        dims_shared:  [[192, 96], [192, 96, 96], [192, 96, 52],[192, 96, 96] ]
+        dims_specific: [[52, 52], [52, 52], [52, 52], [96, 96, 96, 96]]
 # parameters associated with dataset 
 datasets:
     dataset_path: '/home/ignacio/Datasets/nacho_cep_tddft.pkl'

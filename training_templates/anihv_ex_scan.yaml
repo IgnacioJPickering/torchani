@@ -1,5 +1,6 @@
 scan_search:
-    lr: [1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4, 1.0e-3]
+    optimizer:
+        lr: [1.0e-7, 1.0e-6, 1.0e-5, 1.0e-4, 1.0e-3]
 # parameters associated with dataset
 datasets:
     dataset_path: '/home/ignacio/Datasets/nacho_cep_tddft.h5'
