@@ -48,6 +48,39 @@ def validate_energies_ex(model, validation):
 
     return main_metric, metrics
 
+def validate_energies_ex_and_foscs(model, validation):
+    device = model.aev_computer.ShfR.device
+    # run energy validation on a given dataset
+    mse = torch.nn.MSELoss(reduction='none')
+    total_mses = torch.zeros(model.neural_networks.num_outputs, device=device, dtype=torch.float)
+    count = 0
+    with torch.no_grad():
+        for conformation in validation:
+            species = conformation['species'].to(device)
+            coordinates = conformation['coordinates'].to(device).float()
+            target_ground = conformation['energies'].to(device).float().reshape(-1, 1)
+            target_ex = conformation['energies_ex'].to(device).float()
+            target_foscs = conformation['foscs'].to(device).float()
+            target = torch.cat((target_ground, target_ex, target_foscs), dim=-1)
+
+            _, predicted_energies, predicted_foscs = model((species, coordinates))
+            predicted = torch.cat((predicted_energies, predicted_foscs), dim=-1)
+            total_mses += mse(predicted, target).sum(dim=0)
+            count += predicted_energies.shape[0]
+
+    num_outputs = model.neural_networks.num_outputs
+    rmses_au = torch.sqrt(total_mses / count)
+    average_rmse_energies = hartree2kcalmol(rmses_au[0:num_outputs]).mean()
+    average_rmse_foscs = rmses_au[num_outputs:].mean()
+
+    main_metric = {'average_rmse_energies_kcalmol': average_rmse_energies}
+    metrics = { f'state_{j}/rmse_energies_kcalmol': v for j, v in enumerate(hartree2kcalmol(rmses_au[0:num_outputs]))}
+    metrics.update({ f'state_{j}/rmse_energies_eV': v for j, v in enumerate(hartree2ev(rmses_au[0:num_outputs]))})
+    metrics.update({ f'state_{j}/rmse_foscs_au': v for j, v in enumerate(rmses_au[num_outputs:])})
+    metrics.update({ f'average_rmse_foscs_au': v for j, v in enumerate(average_rmse_foscs[num_outputs:])})
+
+    return main_metric, metrics
+
 class RootAtomsLoss(torch.nn.Module):
 
     def __init__(self):
