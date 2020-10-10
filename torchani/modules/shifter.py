@@ -2,6 +2,7 @@ import torch
 from torch import Tensor
 from ..nn import SpeciesEnergies
 from typing import Tuple, Optional
+from .ani_models import SpeciesEnergiesDipoles, SpeciesEnergiesMagnitudes
 
 
 class EnergyShifter(torch.nn.Module):
@@ -66,7 +67,7 @@ class EnergyShifter(torch.nn.Module):
         """
         # even if energies is of shape (C, X) this ends up working perfectly fine
         # the only issue in that case is that intercept should be an array
-        # of the correct shape also, if used. 
+        # of the correct shape also, if used.
         # the important point in any case is to have the correct (S, X)
         # shape for self_energies
         species, energies = species_energies
@@ -79,3 +80,20 @@ class EnergyShifter(torch.nn.Module):
     def extra_repr(self):
         return f'self_energies={self.self_energies.detach().cpu().numpy()}, intercept={self.intercept}'
 
+class EnergyShifterExtra(EnergyShifter):
+    def forward(self,
+                species_energies_other: Tuple[Tensor, Tensor, Tensor],
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        """(species, molecular energies, other)->(species, molecular energies + sae, other)
+        """
+        # wrapper that bypasses the third tensor for models that also output
+        # dipoles or other magnitudes
+        species, energies, other = species_energies_other
+        self_energies = self.self_energies[species]
+        # set to zero all self energies of the dummy atoms
+        self_energies[species == self.dummy_species] = self.dummy_self_energy
+        energies = self_energies.sum(dim=1) + self.intercept
+        if len(other.shape) == 3 and other.shape[1] == 3:
+            return SpeciesEnergiesDipoles(species, energies, other)
+        return SpeciesEnergiesMagnitudes(species, energies, other)
