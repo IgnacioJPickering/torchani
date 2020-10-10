@@ -9,6 +9,10 @@ class SpeciesSplitAEV(NamedTuple):
     radial: Tensor
     angular: Tensor
 
+class SpeciesAEV(NamedTuple):
+    species: Tensor
+    aevs: Tensor
+
 
 class AEVComputerSplit(AEVComputer):
     r"""AEV Computer that splits the final aev into correctly shaped radial and angular parts
@@ -47,3 +51,34 @@ class AEVComputerSplit(AEVComputer):
         angular_aev = angular_aev.reshape(-1, num_species_pairs, angular_dist_divisions, angle_sections) #(species_pairs, radial_value, angular_value)
 
         return SpeciesSplitAEV(species, radial_aev, angular_aev)
+
+class AEVComputerCoord(AEVComputer):
+
+    def forward(self, input_: Tuple[Tensor, Tensor],
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None,
+                masses: Optional[Tensor] = None) -> SpeciesAEV:
+        species, coordinates = input_
+        assert species.shape == coordinates.shape[:-1]
+
+        if cell is None and pbc is None:
+            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
+        else:
+            assert (cell is not None and pbc is not None)
+            shifts = compute_shifts(cell, pbc, self.cutoff)
+            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
+
+        # if masses is passed, shape (C, A) then these are used to calculate
+        # the center of mass for each molecule and displace all coordinates
+
+        if masses is not None:
+            assert masses.shape == species.shape
+            total_masses = masses.sum(dim=1) # masses are summed across all atoms
+            com = (coordinates * masses.unsqueeze(-1)).sum(2)/ total_masses.unsqueeze(-1)
+            assert com.shape[0] == coordinates.shape[0]
+            assert com.shape[1] == 3
+            coordinates = coordinates - com
+
+
+        # coordinates get passed onto the ANIModel in order to calculate dipoles
+        return SpeciesAEV(species, aev, coordinates)
