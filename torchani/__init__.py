@@ -39,6 +39,7 @@ from . import models
 from . import units
 from . import modules
 from . import training
+from . import geometry
 from pkg_resources import get_distribution, DistributionNotFound
 
 try:
@@ -48,7 +49,7 @@ except DistributionNotFound:
     pass
 
 __all__ = ['AEVComputer', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
-           'utils', 'neurochem', 'models', 'units', 'modules', 'training', 'TemplateModel']
+           'utils', 'neurochem', 'models', 'units', 'modules', 'training', 'TemplateModel', 'geometry']
 
 try:
     from . import ase  # noqa: F401
