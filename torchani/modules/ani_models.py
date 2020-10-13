@@ -122,13 +122,12 @@ class ANIModelDipoles(ANIModel):
 
         self.num_outputs=num_outputs
 
-
     def forward(
             self,
-            species_aev_coordinates: Tuple[Tensor, Tensor, Tensor],
+            species_coordinates_aev: Tuple[Tensor, Tensor, Tensor],
             cell: Optional[Tensor] = None,
             pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        species, aev, coordinates = species_aev_coordinates
+        species, coordinates, aev = species_coordinates_aev
         assert species.shape == aev.shape[:-1]
         #shape of species is now C, A
         #shape of species is now C x A
@@ -165,7 +164,7 @@ class ANIModelDipoles(ANIModel):
 
         # since we are outputting charges output of each network will be a
         # tuple energies, charges
-        return SpeciesEnergies(species, total_energies, total_dipoles)
+        return SpeciesEnergiesDipoles(species, total_energies, total_dipoles)
 
 class ANIModelMagnitudes(ANIModel):
     """ANI model that compute energies and charges"""
@@ -186,7 +185,6 @@ class ANIModelMagnitudes(ANIModel):
             self.squeezer = torch.nn.Identity()
 
         self.num_outputs=num_outputs
-
 
     def forward(
             self,
@@ -223,4 +221,4 @@ class ANIModelMagnitudes(ANIModel):
         total_energies = output_energies.sum(dim=1)
         total_magnitudes = output_magnitudes.sum(dim=1)
 
-        return SpeciesEnergies(species, total_energies, total_magnitudes)
+        return SpeciesEnergiesMagnitudes(species, total_energies, total_magnitudes)

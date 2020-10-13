@@ -11,6 +11,7 @@ from ase.md.langevin import Langevin
 from ase import units
 
 import matplotlib.pyplot as plt
+import matplotlib as mpl
 from pathlib import Path
 
 def plot_file(file_path, comment):
@@ -25,11 +26,47 @@ def plot_file(file_path, comment):
     assert len(std) == len(mean)
     assert len(std) == len(sizes)
     for times in all_trials:
-        ax.errorbar(x=sizes, y=mean, yerr=std*2, ecolor='k', capsize =2, fmt='s--', ms=4)
+        ax.errorbar(x=sizes, y=mean, yerr=std*2, ecolor='k', capsize =2, fmt='s--', ms=1)
     #ax.plot(times, sizes)
     ax.set_xlabel('System size (atoms)')
     ax.set_ylabel('Walltime per ns (h)')
     ax.set_title(comment)
+    plt.show()
+
+def plot_many(path_to_files, comment):
+    mpl.rc('font', size=16)
+    file_paths = [f for f in Path(path_to_files).resolve().iterdir() if f.suffix == '.pkl']
+    fig, ax = plt.subplots()
+    for p in file_paths:
+        with open(Path(p).resolve(), 'rb') as f:
+            times_sizes = pickle.load(f)
+            all_trials = np.asarray(times_sizes['times'])
+            sizes = times_sizes['atoms']
+    
+        std = all_trials.std(axis=0)
+        mean = all_trials.mean(axis=0)
+        assert len(std) == len(mean)
+        assert len(std) == len(sizes)
+        if 'ani1x' in p.stem:
+            c = 'r'
+        elif 'ani2x' in p.stem:
+            c = 'b'
+        elif 'ani1ccx' in p.stem:
+            c = 'g'
+        if 'one' in p.stem:
+            fmt = 's--'
+        else:
+            fmt = 's-'
+        l = p.stem.split('_')[0].capitalize() + p.stem.split('_')[1].capitalize()
+        l = l.replace('All', ' Ensemble')
+        l = l.replace('One', ' Single Model')
+        l = l.replace('Ani', 'ANI-')
+        ax.errorbar(x=sizes, y=mean, yerr=std*2, color=c, ecolor='k', capsize =2, fmt=fmt, ms=4, label=l)
+    ax.set_ylim(bottom=0,top=37)
+    ax.set_xlabel('System size (atoms)')
+    ax.set_ylabel('Walltime per ns (h)')
+    #ax.set_title(comment)
+    plt.legend()
     plt.show()
 
 if __name__ == "__main__":
@@ -44,6 +81,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model', default='ani1x_one')
     parser.add_argument('-t', '--trials', default=5)
     parser.add_argument('-p', '--plot', action='store_true', default=False)
+    parser.add_argument('--path-to-files', default=None)
     args = parser.parse_args()
 
     file_name = args.file_name or args.model
@@ -110,4 +148,7 @@ if __name__ == "__main__":
                     string = ' '.join(times.astype(str)) + f' {s}\n'
                     f.write(string)
     if args.plot:
-        plot_file(pickle_file, comment)
+        if not args.path_to_files:
+            plot_file(pickle_file, comment)
+        else:
+            plot_many(args.path_to_files, comment)

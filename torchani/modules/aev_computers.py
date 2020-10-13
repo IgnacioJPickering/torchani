@@ -1,20 +1,21 @@
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
-from torchani.aev import compute_aev, compute_shifts, AEVComputer
 import torch
 
+from .aev_computer_joint import AEVComputerJoint, SpeciesAEV
 
 class SpeciesSplitAEV(NamedTuple):
     species: Tensor
     radial: Tensor
     angular: Tensor
 
-class SpeciesAEV(NamedTuple):
+class SpeciesCoordinatesAEV(NamedTuple):
     species: Tensor
+    coordinates: Tensor
     aevs: Tensor
 
 
-class AEVComputerSplit(AEVComputer):
+class AEVComputerSplit(AEVComputerJoint):
     r"""AEV Computer that splits the final aev into correctly shaped radial and angular parts
 
     Useful for different refinement of angular and radial subsections of the AEV
@@ -28,12 +29,12 @@ class AEVComputerSplit(AEVComputer):
         assert species.shape == coordinates.shape[:-1]
 
         if cell is None and pbc is None:
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
+            aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
         else:
             assert (cell is not None and pbc is not None)
             cutoff = max(self.Rcr, self.Rca)
-            shifts = compute_shifts(cell, pbc, cutoff)
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
+            shifts = self.compute_shifts(cell, pbc, cutoff)
+            aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
         radial_aev, angular_aev = torch.split(aev, [self.radial_length, self.angular_length], dim=-1)
         num_species_pairs = (((self.num_species + 1) * (self.num_species))//2)
         angular_dist_divisions = len(self.ShfA)
@@ -52,7 +53,7 @@ class AEVComputerSplit(AEVComputer):
 
         return SpeciesSplitAEV(species, radial_aev, angular_aev)
 
-class AEVComputerCoord(AEVComputer):
+class AEVComputerCoord(AEVComputerJoint):
 
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -62,11 +63,11 @@ class AEVComputerCoord(AEVComputer):
         assert species.shape == coordinates.shape[:-1]
 
         if cell is None and pbc is None:
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
+            aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
         else:
             assert (cell is not None and pbc is not None)
-            shifts = compute_shifts(cell, pbc, self.cutoff)
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
+            shifts = self.compute_shifts(cell, pbc, self.cutoff)
+            aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
 
         # if masses is passed, shape (C, A) then these are used to calculate
         # the center of mass for each molecule and displace all coordinates
@@ -79,6 +80,5 @@ class AEVComputerCoord(AEVComputer):
             assert com.shape[1] == 3
             coordinates = coordinates - com
 
-
         # coordinates get passed onto the ANIModel in order to calculate dipoles
-        return SpeciesAEV(species, aev, coordinates)
+        return SpeciesCoordinatesAEV(species, aev, coordinates)
