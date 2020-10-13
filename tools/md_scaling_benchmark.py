@@ -3,6 +3,7 @@ import torchani
 import time
 import pickle
 import ase
+import numpy as np
 from tqdm import tqdm
 
 from torchani import geometry
@@ -14,15 +15,20 @@ from pathlib import Path
 
 def plot_file(file_path, comment):
     with open(Path(file_path).resolve(), 'rb') as f:
-        times_trials = pickle.load(f)
-        times = times_trials['times']
-        trials = times_trials['atoms']
+        times_sizes = pickle.load(f)
+        all_trials = np.asarray(times_sizes['times'])
+        sizes = times_sizes['atoms']
     
     fig, ax = plt.subplots()
-    ax.scatter(times, trials)
-    ax.plot(times, trials)
-    ax.set_xlabel('Walltime per ns (h)')
-    ax.set_ylabel('System size (atoms)')
+    std = all_trials.std(axis=0)
+    mean = all_trials.mean(axis=0)
+    assert len(std) == len(mean)
+    assert len(std) == len(sizes)
+    for times in all_trials:
+        ax.errorbar(x=sizes, y=mean, yerr=std*2, ecolor='k', capsize =2, fmt='s--', ms=4)
+    #ax.plot(times, sizes)
+    ax.set_xlabel('System size (atoms)')
+    ax.set_ylabel('Walltime per ns (h)')
     ax.set_title(comment)
     plt.show()
 
@@ -36,7 +42,8 @@ if __name__ == "__main__":
     parser.add_argument('-o', '--only-plot', action='store_true', default=False)
     parser.add_argument('-f', '--file-name', default=None)
     parser.add_argument('-m', '--model', default='ani1x_one')
-    parser.add_argument('--plot', action='store_true', default=False)
+    parser.add_argument('-t', '--trials', default=5)
+    parser.add_argument('-p', '--plot', action='store_true', default=False)
     args = parser.parse_args()
 
     file_name = args.file_name or args.model
@@ -66,35 +73,41 @@ if __name__ == "__main__":
             model = torchani.models.ANI1ccx(periodic_table_index=True, model_index=0).to(device)
         elif args.model == 'ani1ccx_all':
             model = torchani.models.ANI1ccx(periodic_table_index=True).to(device)
-        times = []
+        all_trials = [] 
+        for j in range(args.trials):
+            times = []
+            for r in tqdm(range(args.box_repeats)):
+                d = 0.5
+                coordinates = torch.tensor(
+                    [[[0.0, 0.0, 0.0], [-d, -d, d], [-d, d, -d], [d, -d, -d]]],
+                    device=device)
+                species = torch.tensor([[6, 1, 1, 1]], device=device)
+                tiled_species, tiled_coord = geometry.tile_into_cube((species, coordinates),
+                                                            noise=0.2,
+                                                            repeats=r + 1)
+                molecule = ase.Atoms(tiled_species.squeeze().tolist(),
+                                     positions=tiled_coord.squeeze().tolist(),
+                                     calculator=model.ase())
+                tiled_coord.requires_grad_()
+                dyn = Langevin(molecule, 1.0 * units.fs, 300 * units.kB, 0.2)
 
-        for r in tqdm(range(args.box_repeats)):
-            d = 0.5
-            coordinates = torch.tensor(
-                [[[0.0, 0.0, 0.0], [-d, -d, d], [-d, d, -d], [d, -d, -d]]],
-                device=device)
-            species = torch.tensor([[6, 1, 1, 1]], device=device)
-            tiled_species, tiled_coord = geometry.tile_into_cube((species, coordinates),
-                                                        noise=0.2,
-                                                        repeats=r + 1)
-            molecule = ase.Atoms(tiled_species.squeeze().tolist(),
-                                 positions=tiled_coord.squeeze().tolist(),
-                                 calculator=model.ase())
-            tiled_coord.requires_grad_()
-            dyn = Langevin(molecule, 1.0 * units.fs, 300 * units.kB, 0.2)
-
-            start = time.time()
-            dyn.run(args.steps)
-            end = time.time()
-            times.append(((end - start)/3600)  * 1/(args.steps * 1e-6))
+                start = time.time()
+                dyn.run(args.steps)
+                end = time.time()
+                times.append(((end - start)/3600)  * 1/(args.steps * 1e-6))
+            all_trials.append(times)
 
         with open(pickle_file, 'wb') as f:
-            pickle.dump({'times':times, 'atoms':sizes}, f)
+            pickle.dump({'times':all_trials, 'atoms':sizes}, f)
 
         with open(csv_file, 'w') as f:
             f.write(f'#{comment}')
-            f.write(f'#Times (h), Sizes (atoms)\n')
-            for t, s in zip(times, sizes):
-                f.write(f'{t} {s}\n')
+            titles = '#' + ' '.join([f'Trial {j} walltime per ns (h)' for j in range(args.trials)])
+            titles += '\n'
+            f.write(titles)
+            all_trials = np.asarray(all_trials)
+            for times, s in zip(all_trials, sizes):
+                    string = ' '.join(times.astype(str)) + f' {s}\n'
+                    f.write(string)
     if args.plot:
         plot_file(pickle_file, comment)
