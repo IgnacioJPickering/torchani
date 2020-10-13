@@ -32,7 +32,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='MD scaling benchmark for torchani')
     parser.add_argument('-d', '--device', type=str, default='cuda' )
     parser.add_argument('-s', '--steps', type=int, default=100)
-    parser.add_argument('-b', '--box-repeats', type=int, default=17)
+    parser.add_argument('-b', '--box-repeats', type=int, default=15)
     parser.add_argument('-o', '--only-plot', action='store_true', default=False)
     parser.add_argument('-f', '--file-name', default=None)
     parser.add_argument('-m', '--model', default='ani1x_one')
