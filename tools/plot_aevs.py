@@ -1,10 +1,10 @@
 import torchani
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
+from mpl_toolkits.mplot3d import Axes3D # noqa
 import numpy as np
+from numpy import random 
 
 aev_computer = torchani.TemplateModel.like_ani1x().aev_computer
-
 
 # these scales work for radial terms, but not for
 # angular terms necessarily
@@ -34,6 +34,8 @@ scales_angular = np.asarray([
 0.3704739662625683, 
 0.11249284672261844, 
 0.0144858545390771])
+scales_angular = np.ones_like(scales_angular)
+scales = np.ones_like(scales)
 
 radial_cutoff = aev_computer.Rcr.item()
 angular_cutoff = aev_computer.Rca.item()
@@ -55,6 +57,7 @@ if len(angular_etas) != len(angular_shifts):
 
 if len(zetas) != len(angle_sections):
     zetas = zetas.repeat(len(angle_sections))
+
 def cosine_cutoff(x, cut):
     return 0.5 * (1 + np.cos(x * (np.pi/cut)))
 
@@ -62,7 +65,7 @@ def bare_gaus(x, eta, shift, scale=1):
     
     return (1/scale) * np.exp(-eta * (x - shift) ** 2)
 
-def bare_angular_cosine(theta, zeta, shift_z, norm=True):
+def bare_angular_cosine(theta, zeta, shift_z, norm=False):
     theta = np.where(theta < np.pi, theta, 2 * np.pi - theta )
     if norm:
         norm = 1 / (1.5** zeta)
@@ -70,14 +73,12 @@ def bare_angular_cosine(theta, zeta, shift_z, norm=True):
         norm = 1
     return norm * (1 + 0.5 * np.cos(theta - shift_z)) ** zeta
 
-def bare_angular_terms(x, theta, eta_a, shift_a, zeta, shift_z, norm=True, double=False, scale=1):
+def bare_angular_terms(x, theta, eta_a, shift_a, zeta, shift_z, norm=False, double=True, scale=1):
     if double:
         factor = 2
     else:
         factor = 1
     return factor * bare_gaus(x, eta_a, shift_a, scale=scale)* bare_angular_cosine(theta, zeta, shift_z, norm=norm)
-
-
 
 r_radial_dummy = np.linspace(0.0, radial_cutoff + 0.5, 1000)
 r_angular_dummy = np.linspace(0.0, angular_cutoff + 0.5, 1000)
@@ -85,101 +86,122 @@ angles = np.linspace(0.0, 2 * np.pi, 1000)
 
 r_angular_mesh, angles_mesh = np.meshgrid(r_angular_dummy, angles)
 
-fig, ax = plt.subplots()
-for eta, shift, s in zip(radial_etas, radial_shifts, scales):
-    ax.plot(r_radial_dummy, bare_gaus(r_radial_dummy, eta, shift, scale=s))
-ax.vlines(x=[radial_shifts[0], radial_cutoff], ymin=0, ymax=1.3)
-ax.vlines(x=radial_shifts, ymin=0, ymax=1.0, colors='k', linestyles='dashed')
-ax.set_xlim(0.0, radial_cutoff + 0.5)
-ax.set_title('Radial terms')
-plt.show()
 
-fig, ax = plt.subplots()
-for eta, shift, s in zip(radial_etas, radial_shifts, scales):
-    ax.plot(r_radial_dummy, bare_gaus(r_radial_dummy, eta, shift, scale=s) *
-            cosine_cutoff(r_radial_dummy, radial_cutoff))
-ax.vlines(x=[radial_shifts[0], radial_cutoff], ymin=0, ymax=1.3)
-ax.vlines(x=radial_shifts, ymin=0, ymax=1.0, colors='k', linestyles='dashed')
-ax.set_xlim(0.0, radial_cutoff + 0.5)
-ax.set_title('Radial terms + cutoff')
-plt.show()
 
-fig, ax = plt.subplots()
-for eta, shift, s in zip(angular_etas, angular_shifts, scales_angular):
-    ax.plot(r_angular_dummy, bare_gaus(r_angular_dummy, eta, shift, scale=s))
-ax.vlines(x=[angular_shifts[0], angular_cutoff], ymin=0, ymax=1.3)
-ax.set_xlim(0.0, angular_cutoff + 0.5)
-ax.set_title('Angular terms')
-plt.show()
+def plot_gausians(dummy, etas, shifts, scales, cutoff, comment, with_cut=False, with_cut_sq=False):
+    fig, ax = plt.subplots()
+    for eta, shift, s in zip(etas, shifts, scales):
+        if with_cut:
+            z = bare_gaus(dummy, eta, shift, scale=s) * cosine_cutoff(dummy, cutoff)
+        elif with_cut_sq:
+            z = bare_gaus(dummy, eta, shift, scale=s) * (cosine_cutoff(dummy, cutoff) ** 2)
+        else:
+            z = bare_gaus(dummy, eta, shift, scale=s)
+        ax.plot(dummy, z)
+    ax.vlines(x=[shifts[0], cutoff], ymin=0, ymax=1.3)
+    ax.vlines(x=shifts, ymin=0, ymax=1.0, colors='k', linestyles='dashed')
+    ax.set_xlim(0.0, cutoff + 0.5)
+    plt.show()
 
-fig, ax = plt.subplots()
-for eta, shift, s in zip(angular_etas, angular_shifts, scales_angular):
-    A = bare_gaus(r_angular_dummy, eta, shift, scale=s) * cosine_cutoff(r_angular_dummy, angular_cutoff) ** 2
-    ax.plot(r_angular_dummy, A)
-ax.vlines(x=[angular_shifts[0], angular_cutoff], ymin=0, ymax=1.3)
-ax.set_xlim(0.0, angular_cutoff + 0.5)
-ax.set_title('Angular terms + cutoff')
-plt.show()
+def plot_angular_cosine(dummy, zetas, shifts, comment):
+    fig, ax = plt.subplots()
+    for zeta, shift_z in zip(zetas, angle_sections):
+        ax.plot(angles, bare_angular_cosine(angles, zeta, shift_z) )
+    d = 8
+    assert d % 2 == 0
+    ax.set_xticks(np.linspace(0, 2* np.pi, d + 1))
+    ax.set_xlim(-0.01, 2 * np.pi + 0.01)
+    ax.set_title(comment)
+    plt.show()
 
-fig, ax = plt.subplots()
+def plot_polar(r_angular_mesh, angles_mesh, etas, shifts, zetas, angle_sections, scales, comment, cutoff, with_cut_sq=False, contours=False, surface=False):
+    if surface:
+        assert not contours
+    fig = plt.figure()
+    if surface:
+        ax = fig.add_subplot(projection='3d')
+    else:
+        ax = fig.add_subplot(projection='polar')
+    colormap_plot = []
+    for eta, shift, s in zip(angular_etas, angular_shifts, scales_angular):
+        for zeta, shift_z in zip(zetas, angle_sections):
+            if with_cut_sq:
+                z = bare_angular_terms(r_angular_mesh, angles_mesh, eta, shift, zeta, shift_z, scale=s) * cosine_cutoff(r_angular_mesh, cutoff) ** 2
+            else:
+                z = bare_angular_terms(r_angular_mesh, angles_mesh, eta, shift, zeta, shift_z, scale=s)
+            colormap_plot.append(z)
+            if contours:
+                ax.contour(angles_mesh, r_angular_mesh, z, levels=3)
+    colormap_plot = np.asarray(colormap_plot).max(axis=0)
+    if surface:
+        X, Y = r_angular_mesh * np.cos(angles_mesh), r_angular_mesh * np.sin(angles_mesh)
+        mappable = ax.plot_surface(X, Y, colormap_plot, cmap = 'jet')
+    else:
+        mappable = ax.pcolormesh(angles_mesh, r_angular_mesh, colormap_plot, cmap = 'jet')
+    fig.colorbar(mappable)
+    ax.set_title('Polar angular')
+    plt.show()
+
+def simulate_histogram_gaussian(trials, cutoff, eta, shift, with_cut=False, with_cut_sq=False):
+    trials = random.uniform(0.0, cutoff, trials)
+    if with_cut:
+        values = bare_gaus(trials, eta, shift) * cosine_cutoff(trials, cutoff)
+    elif with_cut_sq:
+        values = bare_gaus(trials, eta, shift) * cosine_cutoff(trials, cutoff) ** 2
+    else:
+        values = bare_gaus(trials, eta, shift)
+    values = values[values.nonzero()]
+    fig, ax = plt.subplots()
+    ax.hist(values, bins=100)
+    plt.show()
+
+def simulate_histogram_cosines(trials, cutoff, zeta, shift_z):
+    trials = random.uniform(0.0, cutoff, trials)
+    values = bare_angular_cosine(trials, zeta, shift_z)
+    values = values[values.nonzero()]
+    fig, ax = plt.subplots()
+    ax.hist(values, bins=100)
+    plt.show()
+
+def simulate_histogram_angles(trials, cutoff, zeta, shift_z, eta, shift):
+    trials = random.uniform(0.0, cutoff, trials)
+    values = bare_angular_cosine(trials, zeta, shift_z) * bare_gaus(trials, eta, shift) * cosine_cutoff(trials, cutoff) ** 2
+    values = values[values.nonzero()]
+    fig, ax = plt.subplots()
+    ax.hist(values, bins=100)
+    plt.show()
+
 for zeta, shift_z in zip(zetas, angle_sections):
-    ax.plot(angles, bare_angular_cosine(angles, zeta, shift_z) )
-#ax.vlines([0.0, np.pi, 2 * np.pi], ymin=0, ymax=1.3)
-d = 8
-assert d % 2 == 0
-ax.set_xticks(np.linspace(0, 2* np.pi, d + 1))
-#ax.set_xticklabels(['0'] +  [r'$\frac{'  f'{j}'  r'}{' f'{d//2}' r'}\pi$' for j in range(1, d + 1)])
-ax.set_xlim(-0.01, 2 * np.pi + 0.01)
-ax.set_title('Angle sections')
-plt.show()
+    for eta, shift in zip(angular_etas, angular_shifts):
+        simulate_histogram_angles(10000, angular_cutoff, zeta, shift_z, eta, shift)
+
+for zeta, shift in zip(zetas, angle_sections):
+    simulate_histogram_cosines(100000, angular_cutoff, zeta, shift)
+
+for eta, shift in zip(radial_etas, radial_shifts):
+    simulate_histogram_gaussian(100000, radial_cutoff, eta, shift)
 
 
-
-fig = plt.figure()
-ax = fig.add_subplot(projection='polar')
-build = True
-colormap_plot = []
-for eta, shift, s in zip(angular_etas, angular_shifts, scales_angular):
-    for zeta, shift_z in zip(zetas, angle_sections):
-        z = bare_angular_terms(r_angular_mesh, angles_mesh, eta, shift, zeta, shift_z, norm=True, scale=s)
-        colormap_plot.append(z)
-        ax.contour(angles_mesh, r_angular_mesh, z, levels=3)
-colormap_plot = np.asarray(colormap_plot).max(axis=0)
-mappable = ax.pcolormesh(angles_mesh, r_angular_mesh, colormap_plot, cmap = 'jet')
-fig.colorbar(mappable)
-ax.set_title('Polar angular')
-plt.show()
-
-fig = plt.figure()
-ax = fig.add_subplot(projection='polar')
-build = True
-colormap_plot = []
-for eta, shift, s in zip(angular_etas, angular_shifts, scales_angular):
-    for zeta, shift_z in zip(zetas, angle_sections):
-        z = bare_angular_terms(r_angular_mesh, angles_mesh, eta, shift, zeta, shift_z, norm=True, scale=s) * cosine_cutoff(r_angular_dummy, angular_cutoff) ** 2
-        colormap_plot.append(z)
-        ax.contour(angles_mesh, r_angular_mesh, z, levels=3)
-colormap_plot = np.asarray(colormap_plot).max(axis=0)
-mappable = ax.pcolormesh(angles_mesh, r_angular_mesh, colormap_plot, cmap = 'jet')
-fig.colorbar(mappable)
-ax.set_title('Polar angular + cutoff')
-plt.show()
-
-fig = plt.figure()
-ax = fig.add_subplot(projection='3d')
-build = True
-colormap_plot = []
-for eta, shift, s in zip(angular_etas, angular_shifts, scales_angular):
-    for zeta, shift_z in zip(zetas, angle_sections):
-        z = bare_angular_terms(r_angular_mesh, angles_mesh, eta, shift, zeta, shift_z, norm=True, scale=s) * cosine_cutoff(r_angular_dummy, angular_cutoff) ** 2
-        colormap_plot.append(z)
-        #ax.contour(angles_mesh, r_angular_mesh, z, levels=3)
-X, Y = r_angular_mesh * np.cos(angles_mesh), r_angular_mesh * np.sin(angles_mesh)
-colormap_plot = np.asarray(colormap_plot).max(axis=0)
-mappable = ax.plot_surface(X, Y, colormap_plot, cmap = 'jet')
-fig.colorbar(mappable)
-ax.set_title('Polar angular + cutoff')
-plt.show()
 exit()
+# radial
+plot_gausians(r_radial_dummy, radial_etas, radial_shifts, scales, radial_cutoff, 'Radial terms')
+# radial with cut
+plot_gausians(r_radial_dummy, radial_etas, radial_shifts, scales, radial_cutoff, 'Radial terms + cutoff', with_cut=True)
+# angular
+plot_gausians(r_angular_dummy, angular_etas, angular_shifts, scales_angular, angular_cutoff, 'Angular terms')
+# angular with cut
+plot_gausians(r_angular_dummy, angular_etas, angular_shifts, scales_angular, angular_cutoff, 'Angular terms + cutoff', with_cut_sq=True)
+# angular cosines
+plot_angular_cosine(angles, zetas, angle_sections, 'Angular cosines')
+# polar angular
+plot_polar(r_angular_mesh, angles_mesh, angular_etas, angular_shifts, zetas, angle_sections, scales_angular, 'Angular polar', angular_cutoff)
+# polar angular with cut
+plot_polar(r_angular_mesh, angles_mesh, angular_etas, angular_shifts, zetas, angle_sections, scales_angular, 'Angular polar + cutoff', angular_cutoff, with_cut_sq=True)
+# plot angular in surface form
+plot_polar(r_angular_mesh, angles_mesh, angular_etas, angular_shifts, zetas, angle_sections, scales_angular, 'Angular polar + cutoff', angular_cutoff, surface=True)
+# plot angular with cut in surface form
+plot_polar(r_angular_mesh, angles_mesh, angular_etas, angular_shifts, zetas, angle_sections, scales_angular, 'Angular polar + cutoff', angular_cutoff, with_cut_sq=True, surface=True)
+
+
 
 
