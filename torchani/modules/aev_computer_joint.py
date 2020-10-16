@@ -17,8 +17,10 @@ class AEVComputerJoint(torch.nn.Module):
             trainable_radial_shifts=False,
             trainable_angular_shifts=False,
             trainable_angle_sections=False,
-            trainable_etas=False, trainable_zeta=False, trainable_shifts=False):
+            trainable_etas=False, trainable_zeta=False, trainable_shifts=False, 
+            simplify_angular=False, ):
         super().__init__()
+        self.register_buffer('simplify_angular', torch.tensor(simplify_angular, dtype=torch.bool))
         self.register_buffer('Rcr', torch.tensor(Rcr, dtype=torch.double))
         self.register_buffer('Rca', torch.tensor(Rca, dtype=torch.double))
         assert Rca <= Rcr, "Current implementation of AEVComputer assumes Rca <= Rcr"
@@ -183,6 +185,19 @@ class AEVComputerJoint(torch.nn.Module):
         # (conformations x atoms, ?, ?, ?) where ? depend on constants.
         # We then should flat the last 4 dimensions to view the subAEV as a two
         # dimensional tensor (onnx doesn't support negative indices in flatten)
+        return ret.flatten(start_dim=1)
+
+    def simple_angular_terms(self, Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta: Tensor,
+                      ShfA: Tensor, vectors12: Tensor) -> Tensor:
+        vectors12 = vectors12.view(2, -1, 3, 1, 1, 1)
+        distances12 = vectors12.norm(2, dim=-4).sum(0) / 2
+        cos_angles = 0.95 * torch.nn.functional.cosine_similarity(vectors12[0], vectors12[1], dim=-4)
+        angles = torch.acos(cos_angles)
+    
+        fc12 = self.cutoff_cosine(distances12, Rca)
+        factor1 = ((1 + torch.cos(angles - ShfZ)) / 2) ** Zeta
+        factor2 = torch.exp(-EtaA * (distances12 - ShfA) ** 2)
+        ret = 2 * factor1 * factor2 * fc12
         return ret.flatten(start_dim=1)
 
     def radial_terms(self, Rcr: float, EtaR: Tensor, ShfR: Tensor, distances: Tensor) -> Tensor:
@@ -380,7 +395,10 @@ class AEVComputerJoint(torch.nn.Module):
         species12_small = species12[:, pair_index12]
         vec12 = vec.index_select(0, pair_index12.view(-1)).view(2, -1, 3) * sign12.unsqueeze(-1)
         species12_ = torch.where(sign12 == 1, species12_small[1], species12_small[0])
-        angular_terms_ = self.angular_terms(Rca, ShfZ, EtaA, Zeta, ShfA, vec12)
+        if self.simplify_angular.item():
+            angular_terms_ = self.simple_angular_terms(Rca, ShfZ, EtaA, Zeta, ShfA, vec12)
+        else:
+            angular_terms_ = self.angular_terms(Rca, ShfZ, EtaA, Zeta, ShfA, vec12)
         angular_aev = angular_terms_.new_zeros((num_molecules * num_atoms * num_species_pairs, angular_sublength))
         index = central_atom_index * num_species_pairs + triu_index[species12_[0], species12_[1]]
         angular_aev.index_add_(0, index, angular_terms_)
@@ -397,7 +415,7 @@ class AEVComputerJoint(torch.nn.Module):
                        trainable_radial_shifts=False,
                        trainable_angular_shifts=False,
                        trainable_angle_sections=False,
-                       trainable_shifts=False):
+                       trainable_shifts=False, simplify_angular=False):
         r""" Provides a convenient way to linearly fill cutoffs
 
         This is a user friendly constructor that builds an
@@ -492,7 +510,7 @@ class AEVComputerJoint(torch.nn.Module):
                 trainable_radial_shifts=trainable_radial_shifts,
                 trainable_angular_shifts=trainable_angular_shifts,
                 trainable_angle_sections=trainable_angle_sections,
-                trainable_shifts=trainable_shifts)
+                trainable_shifts=trainable_shifts, simplify_angular=simplify_angular)
 
     @classmethod
     def like_ani1x(cls):

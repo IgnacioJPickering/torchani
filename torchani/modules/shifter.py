@@ -2,7 +2,7 @@ import torch
 from torch import Tensor
 from ..nn import SpeciesEnergies
 from typing import Tuple, Optional
-from .ani_models import SpeciesEnergiesDipoles, SpeciesEnergiesMagnitudes
+from .ani_models import SpeciesEnergiesExtra
 
 
 class EnergyShifter(torch.nn.Module):
@@ -84,7 +84,7 @@ class EnergyShifterExtra(EnergyShifter):
     def forward(self,
                 species_energies_other: Tuple[Tensor, Tensor, Tensor],
                 cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+                pbc: Optional[Tensor] = None) -> SpeciesEnergiesExtra:
         """(species, molecular energies, other)->(species, molecular energies + sae, other)
         """
         # wrapper that bypasses the third tensor for models that also output
@@ -94,6 +94,4 @@ class EnergyShifterExtra(EnergyShifter):
         # set to zero all self energies of the dummy atoms
         self_energies[species == self.dummy_species] = self.dummy_self_energy
         energies = self_energies.sum(dim=1) + self.intercept
-        if len(other.shape) == 3 and other.shape[1] == 3:
-            return SpeciesEnergiesDipoles(species, energies, other)
-        return SpeciesEnergiesMagnitudes(species, energies, other)
+        return SpeciesEnergiesExtra(species, energies, other)
