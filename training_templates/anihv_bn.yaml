@@ -25,7 +25,7 @@ loss:
     num_inputs: 11
 
 optimizer_loss:
-    lr: 0.0003
+    lr: 0.0001
     weight_decay: 0.0
 
 optimizer:
@@ -38,9 +38,9 @@ optimizer:
 
 lr_scheduler:
     class: 'ReduceLROnPlateau'
-    patience: 3
+    patience: 1
     threshold: 5.e-4
-    factor: 0.98
+    factor: 0.99
 
 
 
@@ -82,6 +82,7 @@ atomic_network:
     dims_shared:  [192, 96]
     dims_specific: [96, 96]
     num_outputs: 11
+    batch_norm: True
 
 # no custom class is supported for this at the moment
 energy_shifter:

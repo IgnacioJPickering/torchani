@@ -19,7 +19,12 @@ setup_attrs = {
     'install_requires': [
         'torch',
         'lark-parser',
-        'requests'
+        'requests', 
+        'h5py', 
+        'tensorboard', 
+        'pyyaml', 
+        'tqdm', 
+        'ase', 
     ],
 }
 

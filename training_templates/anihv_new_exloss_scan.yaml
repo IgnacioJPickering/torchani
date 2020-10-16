@@ -1,4 +1,9 @@
 # parameters associated with dataset
+scan_search:
+    datasets:
+        batch_size: [2048, 2048, 512, 512, 2560, 2560]
+    
+#
 datasets:
     dataset_path: 'all_excited.pkl'
     batch_size: 1024
@@ -79,8 +84,8 @@ ani_model:
 atomic_network:
     class: 'AtomicNetworkSpecFlexMultiple'
     dim_in: 384
-    dims_shared:  [192, 96]
-    dims_specific: [96, 96]
+    dims_shared:  [192, 96, 96]
+    dims_specific: [52, 52]
     num_outputs: 11
 
 # no custom class is supported for this at the moment
