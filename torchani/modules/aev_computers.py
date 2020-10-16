@@ -124,7 +124,7 @@ class AEVComputerCoord(AEVComputerJoint):
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None,
-                masses: Optional[Tensor] = None) -> SpeciesAEV:
+                masses: Optional[Tensor] = None) -> SpeciesCoordinatesAEV:
         species, coordinates = input_
         assert species.shape == coordinates.shape[:-1]
 
