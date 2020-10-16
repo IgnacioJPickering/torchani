@@ -283,7 +283,8 @@ class AtomicNetworkSpecFlexMultiple(torch.nn.Module):
         assert len(self.factors) == num_outputs
 
         range_shared = range(len(dims_shared) - 1)
-        range_specific = range(len(dims_specific) - 1)
+        if dims_specific:
+            range_specific = range(len(dims_specific) - 1)
 
         # shared layers get put into a Sequential module
         residuals_shared = (ResidualBlock(dims_shared[j],
