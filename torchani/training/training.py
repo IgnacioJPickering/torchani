@@ -96,6 +96,15 @@ class RootAtomsLoss(torch.nn.Module):
         num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
         return (self.mse(predicted, target) / num_atoms.sqrt()).mean()
 
+class BareLoss(torch.nn.Module):
+
+    def __init__(self):
+        super().__init__()
+        self.mse =  torch.nn.MSELoss(reduction='none')
+
+    def forward(self, predicted, target, species):
+        return (self.mse(predicted, target)).mean()
+
 class MultiTaskLoss(torch.nn.Module):
     # this function can be used even if the input has multiple
     # values, in that case it just adds up the values, multiplies 
@@ -121,17 +130,21 @@ class MultiTaskLoss(torch.nn.Module):
 
 class MultiTaskUncertaintyLoss(torch.nn.Module):
 
-    def __init__(self, num_inputs=10):
+    def __init__(self, num_inputs=10, weight_sqrt_atoms=True):
         super().__init__()
         self.mse =  torch.nn.MSELoss(reduction='none')
+        self.weight_sqrt_atoms = weight_sqrt_atoms
         # predict log_sigmas_squared since it is more numerically stable
         # this is equivalent to initializing sigmas as ones
         self.register_parameter('log_sigmas_squared', torch.nn.Parameter(torch.zeros(num_inputs, dtype=torch.double)))
 
     def forward(self, predicted, target, species):
-        num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
         squares = self.mse(predicted, target) 
-        losses = (squares / num_atoms.sqrt().reshape(-1, 1)).mean(dim=0)
+        if self.weight_sqrt_atoms:
+            num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
+            losses = (squares / num_atoms.sqrt().reshape(-1, 1)).mean(dim=0)
+        else:
+            losses = (squares).mean(dim=0)
         loss = (0.5 * torch.exp(-self.log_sigmas_squared) * losses).sum() 
         loss = loss + 0.5 * self.log_sigmas_squared.sum()
         return  loss, losses.detach()
