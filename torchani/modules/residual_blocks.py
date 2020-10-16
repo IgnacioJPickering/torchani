@@ -24,7 +24,7 @@ class ResidualBlock(torch.nn.Module):
 
         if batch_norm:
             self.bn1 = torch.nn.BatchNorm1d(dim_in, momentum=batch_norm_momentum, eps=batch_norm_eps)
-            self.bn2 = torch.nn.BatchNorm1d(dim_in, momentum=batch_norm_momentum, eps=batch_norm_eps)
+            self.bn2 = torch.nn.BatchNorm1d(dim_out, momentum=batch_norm_momentum, eps=batch_norm_eps)
         else:
             self.bn1 = torch.nn.Identity()
             self.bn2 = torch.nn.Identity()
