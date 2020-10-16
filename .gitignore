@@ -44,3 +44,4 @@ htmlcov/
 /tools/benchmarks/*
 # ignore slurm outputs
 *.out 
+nohup.out

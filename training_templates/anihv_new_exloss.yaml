@@ -1,26 +1,36 @@
 # parameters associated with dataset
 datasets:
-    # this is the ANI1x released dataset
-    dataset_path: '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
-    batch_size: 2048
-    split_percentage: 0.8
+    dataset_path: '/home/ignacio/Datasets/all_excited/'
+    batch_size: 1024
+    split_percentage: 0.9
     nonstandard_keys : 
         species: 'species'
         coordinates: 'coordinates'
-        energies: 'energies'
+        energies: 'scf_energy'
+        energies_ex: 'energies_ex'
 
 # general parameters
 general:
     early_stopping_lr: 1.0e-10
     max_epochs: 3000
-    use_tqdm: False
+    use_tqdm: True
+    loop: 'excited_state_loop'
+    
+validation_function: 'validate_energies_ex'
+init:
+    function: 'init_sharp_gaussian'
 
 loss:
-    class: 'RootAtomsLoss'
+    class: 'MultiTaskUncertaintyLoss'
+    num_inputs: 11
+
+optimizer_loss:
+    lr: 0.0003
+    weight_decay: 0.0
 
 optimizer:
     class: 'AdamW'
-    lr: 0.001
+    lr: 0.0001  # this seems fine based on hparam search of lr's
     betas: [0.9, 0.999]
     weight_decay: 1.0e-7
     amsgrad: False
@@ -28,13 +38,10 @@ optimizer:
 
 lr_scheduler:
     class: 'ReduceLROnPlateau'
-    patience: 75
+    patience: 3
     threshold: 5.e-4
-    factor: 0.5
+    factor: 0.98
 
-validation_function: 'validate_energies'
-init:
-    function: 'init_traditional'
 
 
 # These hyperparameters are used for constructing the different parts of the
@@ -65,15 +72,18 @@ aev_computer:
 # ANIModel Hyperparameters
 ani_model:
     class: 'ANIModelMultiple'
-    squeeze_last: True
+    squeeze_last: False
+    num_outputs: 11
 
 # AtomicNetwork Hyperparameters
 atomic_network:
-    class: 'AtomicNetworkClassic'
+    class: 'AtomicNetworkSpecFlexMultiple'
     dim_in: 384
-    dims:  [128, 112, 96]
-    final_layer_bias: True
+    dims_shared:  [192, 96]
+    dims_specific: [96, 96]
+    num_outputs: 11
 
 # no custom class is supported for this at the moment
 energy_shifter:
     num_species: 4
+    num_outputs: 11

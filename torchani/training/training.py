@@ -4,25 +4,29 @@ from torchani.units import hartree2kcalmol, hartree2ev
 
 
 def validate_energies(model, validation):
+    model.eval()
     # get device from an arbitrary model tensor
     device = model.aev_computer.ShfR.device
     # run energy validation on a given dataset
     mse_sum = torch.nn.MSELoss(reduction='sum')
     total_mse = 0.0
     count = 0
-    for conformation in validation:
-        species = conformation['species'].to(device)
-        coordinates = conformation['coordinates'].to(device).float()
-        true_energies = conformation['energies'].to(device).float()
+    with torch.no_grad():
+        for conformation in validation:
+            species = conformation['species'].to(device)
+            coordinates = conformation['coordinates'].to(device).float()
+            true_energies = conformation['energies'].to(device).float()
 
-        _, predicted_energies = model((species, coordinates))
-        total_mse += mse_sum(predicted_energies, true_energies).item()
-        count += predicted_energies.shape[0]
+            _, predicted_energies = model((species, coordinates))
+            total_mse += mse_sum(predicted_energies, true_energies).item()
+            count += predicted_energies.shape[0]
     main_metric = {'validation_rmse': hartree2kcalmol(math.sqrt(total_mse / count))}
     metrics = None
+    model.train()
     return main_metric, metrics
 
 def validate_energies_ex(model, validation):
+    model.eval()
     device = model.aev_computer.ShfR.device
     # run energy validation on a given dataset
     mse = torch.nn.MSELoss(reduction='none')
@@ -45,10 +49,11 @@ def validate_energies_ex(model, validation):
     main_metric = {'average_rmse_kcalmol': average_rmse}
     metrics = { f'state_{j}/rmse_kcalmol': v for j, v in enumerate(hartree2kcalmol(rmses_hartree))}
     metrics = { f'state_{j}/rmse_eV': v for j, v in enumerate(hartree2ev(rmses_hartree))}
-
+    model.train()
     return main_metric, metrics
 
 def validate_energies_ex_and_foscs(model, validation):
+    model.eval()
     device = model.aev_computer.ShfR.device
     # run energy validation on a given dataset
     mse = torch.nn.MSELoss(reduction='none')
@@ -78,7 +83,7 @@ def validate_energies_ex_and_foscs(model, validation):
     metrics.update({ f'state_{j}/rmse_energies_eV': v for j, v in enumerate(hartree2ev(rmses_au[0:num_outputs]))})
     metrics.update({ f'state_{j}/rmse_foscs_au': v for j, v in enumerate(rmses_au[num_outputs:])})
     metrics.update({ f'average_rmse_foscs_au': v for j, v in enumerate(average_rmse_foscs[num_outputs:])})
-
+    model.train()
     return main_metric, metrics
 
 class RootAtomsLoss(torch.nn.Module):

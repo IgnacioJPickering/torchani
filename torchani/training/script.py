@@ -400,10 +400,10 @@ def load_datasets(ds_config, output_paths, dataset_path_raw, model):
             data_path = Path(args.dataset_path).resolve()
         else:
             data_path = Path(ds_config['dataset_path']).resolve()
-        assert data_path.is_file()
+        assert data_path.is_file() or data_path.is_dir()
 
-        if data_path.suffix == '.h5':
-            print('Loading training and validation from h5 file')
+        if data_path.suffix == '.h5' or data_path.is_dir():
+            print('Loading training and validation from h5 file or directory of h5 files')
             data.PROPERTIES = tuple(v for k, v in ds_config['nonstandard_keys'].items() if k not in ['species', 'coordinates'])
             # also subtract self energies for ex energies if they are present
             # this may need to be modified in the future
@@ -491,6 +491,7 @@ if __name__ == '__main__':
     # setting shift before output to false makes the model NOT add saes before output
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = TemplateModel.from_yaml(config).to(device).shift_before_output_(False)
+    model.train()
     init_function = getattr(torchani.training, config['init']['function'])
     model.apply(init_function)
 

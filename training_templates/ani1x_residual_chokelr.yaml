@@ -1,7 +1,7 @@
 # parameters associated with dataset
 datasets:
     # this is the ANI1x released dataset
-    dataset_path: '/home/ignacio/Datasets/ani1x_release_wb97x_dz.h5'
+    dataset_path: '/home/ignacio/Datasets/ani1x_release.pkl'
     batch_size: 2048
     split_percentage: 0.8
     nonstandard_keys : 
@@ -20,21 +20,22 @@ loss:
 
 optimizer:
     class: 'AdamW'
-    lr: 0.001
+    lr: 5.0e-4
     betas: [0.9, 0.999]
-    weight_decay: 1.0e-7
+    weight_decay: 1.0e-8
     amsgrad: False
     eps: 1.0e-8
 
 lr_scheduler:
     class: 'ReduceLROnPlateau'
-    patience: 75
+    patience: 1
     threshold: 5.e-4
-    factor: 0.5
+    factor: 0.99
 
 validation_function: 'validate_energies'
+
 init:
-    function: 'init_traditional'
+    function: 'init_sharp_gaussian'
 
 
 # These hyperparameters are used for constructing the different parts of the
@@ -61,6 +62,7 @@ aev_computer:
     num_species: 4
     radial_start: 0.9000e+00
     angular_start: 0.9000e+00
+    simplify_angular: True
 
 # ANIModel Hyperparameters
 ani_model:
@@ -69,10 +71,11 @@ ani_model:
 
 # AtomicNetwork Hyperparameters
 atomic_network:
-    class: 'AtomicNetworkClassic'
+    class: 'AtomicNetworkSpecFlexMultiple'
     dim_in: 384
-    dims:  [128, 112, 96]
-    final_layer_bias: True
+    dims_shared: [192, 192, 96, 96]
+    dims_specific: 
+    final_layer_bias: False
 
 # no custom class is supported for this at the moment
 energy_shifter:

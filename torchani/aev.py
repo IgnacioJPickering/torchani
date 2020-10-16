@@ -55,12 +55,12 @@ def angular_terms(Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta: Tensor,
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
-    vectors12 = vectors12.view(2, -1, 3, 1, 1, 1)
-    distances12 = vectors12.norm(2, dim=-4)
+    vectors12 = vectors12.view(2, -1, 3, 1, 1)
+    distances12 = vectors12.norm(2, dim=-3)
 
     # 0.95 is multiplied to the cos values to prevent acos from
     # returning NaN.
-    cos_angles = 0.95 * torch.nn.functional.cosine_similarity(vectors12[0], vectors12[1], dim=-4)
+    cos_angles = 0.95 * torch.nn.functional.cosine_similarity(vectors12[0], vectors12[1], dim=-3)
     angles = torch.acos(cos_angles)
 
     fcj12 = cutoff_cosine(distances12, Rca)
@@ -68,7 +68,7 @@ def angular_terms(Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta: Tensor,
     factor2 = torch.exp(-EtaA * (distances12.sum(0) / 2 - ShfA) ** 2)
     ret = 2 * factor1 * factor2 * fcj12.prod(0)
     # At this point, ret now has shape
-    # (conformations x atoms, ?, ?, ?) where ? depend on constants.
+    # (conformations x atoms, ?, ?) where ? depend on constants.
     # We then should flat the last 4 dimensions to view the subAEV as a two
     # dimensional tensor (onnx doesn't support negative indices in flatten)
     return ret.flatten(start_dim=1)
@@ -358,33 +358,33 @@ class AEVComputer(torch.nn.Module):
 
         # convert constant tensors to a ready-to-broadcast shape
         # shape convension (EtaR/ShfR)
-        # shape convension (..., Zeta, ShfA/EtaA, ShfZ)
+        # shape convension (..., ShfA/EtaA, ShfZ/Zeta)
         if trainable_etas:
             if len(EtaR) == 1:
                 EtaR = EtaR.repeat(len(ShfR))
             if len(EtaA) == 1:
                 EtaA = EtaA.repeat(len(ShfA))
             self.register_parameter('EtaR', torch.nn.Parameter(EtaR))
-            self.register_parameter('EtaA', torch.nn.Parameter(EtaA.view(1, -1, 1)))
+            self.register_parameter('EtaA', torch.nn.Parameter(EtaA.view(-1, 1)))
         else:
             self.register_buffer('EtaR', EtaR)
-            self.register_buffer('EtaA', EtaA.view(1, -1, 1))
+            self.register_buffer('EtaA', EtaA.view(-1, 1))
         if trainable_zeta:
-            self.register_parameter('Zeta', torch.nn.Parameter(Zeta.view(-1, 1, 1)))
+            self.register_parameter('Zeta', torch.nn.Parameter(Zeta.view(1, -1)))
         else:
-            self.register_buffer('Zeta', Zeta.view(-1, 1, 1))
+            self.register_buffer('Zeta', Zeta.view(1, -1))
         if trainable_radial_shifts:
             self.register_parameter('ShfR', torch.nn.Parameter(ShfR))
         else:
             self.register_buffer('ShfR', ShfR)
         if trainable_angular_shifts:
-            self.register_parameter('ShfA', torch.nn.Parameter(ShfA.view(1, -1, 1)))
+            self.register_parameter('ShfA', torch.nn.Parameter(ShfA.view(-1, 1)))
         else:
-            self.register_buffer('ShfA', ShfA.view(1, -1, 1))
+            self.register_buffer('ShfA', ShfA.view(-1, 1))
         if trainable_angle_sections:
-            self.register_parameter('ShfZ', torch.nn.Parameter(ShfZ.view(1, 1, -1)))
+            self.register_parameter('ShfZ', torch.nn.Parameter(ShfZ.view(1, -1)))
         else:
-            self.register_buffer('ShfZ', ShfZ.view(1, 1, -1))
+            self.register_buffer('ShfZ', ShfZ.view(1, -1))
 
         # The length of radial subaev of a single species
         radial_sublength = self.ShfR.numel()
