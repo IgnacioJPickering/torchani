@@ -42,3 +42,5 @@ htmlcov/
 *tfevents*
 /training_outputs/*/
 /tools/benchmarks/*
+# ignore slurm outputs
+*.out 
