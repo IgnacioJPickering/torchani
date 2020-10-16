@@ -43,6 +43,6 @@ htmlcov/
 /training_outputs/*/
 /tools/benchmarks/*
 # ignore slurm outputs
-*.out 
+*-training.out 
 nohup.out
 slurm_script.sh
