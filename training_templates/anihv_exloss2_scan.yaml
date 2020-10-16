@@ -4,7 +4,7 @@ scan_search:
 
 # parameters associated with dataset
 datasets:
-    dataset_path: '/home/ignacio/Datasets/nacho_cep_tddft.h5'
+    dataset_path: 'nacho_cep_tddft.h5'
     batch_size: 1024
     split_percentage: 0.9
     nonstandard_keys : 
@@ -17,7 +17,7 @@ datasets:
 general:
     early_stopping_lr: 1.0e-10
     max_epochs: 200
-    use_tqdm: True
+    
     loop: 'excited_state_loop'
     
 validation_function: 'validate_energies_ex'

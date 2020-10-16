@@ -1,1 +1,2 @@
-datasets: '/home/ipickering/Datasets/'
+datasets: '/home/ignacio/Datasets/'
+use_tqdm: False

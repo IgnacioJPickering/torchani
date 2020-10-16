@@ -1,7 +1,7 @@
 # parameters associated with dataset
 datasets:
     # this is the ANI1x released dataset
-    dataset_path: '/home/ignacio/Datasets/ani1x_release.pkl'
+    dataset_path: 'ani1x_release.pkl'
     batch_size: 2048
     split_percentage: 0.8
     nonstandard_keys : 
@@ -13,7 +13,7 @@ datasets:
 general:
     early_stopping_lr: 1.0e-10
     max_epochs: 1000
-    use_tqdm: False
+    
 
 loss:
     class: 'RootAtomsLoss'

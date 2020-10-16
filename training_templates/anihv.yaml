@@ -1,6 +1,6 @@
 # parameters associated with dataset
 datasets:
-    dataset_path: '/home/ignacio/Datasets/nacho_cep_tddft.h5'
+    dataset_path: 'nacho_cep_tddft.h5'
     batch_size: 512
     split_percentage: 0.9
     nonstandard_keys : 
@@ -12,7 +12,7 @@ datasets:
 general:
     early_stopping_lr: 1.0e-10
     max_epochs: 3000
-    use_tqdm: False
+    
     
 validation_function: 'validate_energies'
 init:

@@ -334,6 +334,12 @@ def make_output_path_trial_dir(output_paths, yaml_name):
             idx += 1
     return output_paths, idx
 
+def load_global_configuration():
+    global_config_path = Path(__file__).resolve().parent.parent.parent.joinpath('training_templates/global_config.yaml')
+    with open(global_config_path, 'r') as f:
+        global_config = yaml.load(f, Loader=yaml.FullLoader)
+    return global_config
+
 def load_configuration(yaml_path):
     if isinstance(yaml_path, str):
         yaml_path = Path(args.yaml_path).resolve()
@@ -385,7 +391,7 @@ def dump_yaml_input(output_paths, yaml_name, original_config):
             with open(yaml_original_output, 'w') as f:
                 yaml.dump(original_config, f, sort_keys=False)
 
-def load_datasets(ds_config, output_paths, dataset_path_raw, model):
+def load_datasets(ds_config, output_paths, dataset_path_raw, model, global_config=None):
     Datasets = namedtuple('Datasets', 'training validation test')
     # fetch dataset path from input arguments or from configuration file 
     if output_paths.dataset_pkl.is_file():
@@ -399,7 +405,10 @@ def load_datasets(ds_config, output_paths, dataset_path_raw, model):
         if args.dataset_path is not None:
             data_path = Path(args.dataset_path).resolve()
         else:
-            data_path = Path(ds_config['dataset_path']).resolve()
+            if global_config is None:
+                data_path = Path(ds_config['dataset_path']).resolve()
+            else:
+                data_path = Path(global_config['datasets']).resolve().joinpath(ds_config['dataset_path'])
         assert data_path.is_file() or data_path.is_dir()
 
         if data_path.suffix == '.h5' or data_path.is_dir():
@@ -450,6 +459,7 @@ if __name__ == '__main__':
     # Yaml parsing: Get the configuration from the yaml file
     original_config, config, random_search, scan_search, yaml_name = \
                                      load_configuration(args.yaml_path)
+    global_config = load_global_configuration()
 
     output_paths, idx = get_output_paths(args.output_paths, yaml_name)
     
@@ -522,7 +532,7 @@ if __name__ == '__main__':
    
     # Logic for loading datasets, setup training and validation sets and add
     # stuff to EnergyShifter
-    datasets = load_datasets(config['datasets'], output_paths, args.dataset_path, model)
+    datasets = load_datasets(config['datasets'], output_paths, args.dataset_path, model, global_config=global_config)
     torch.cuda.empty_cache()
     
     # load model parameters from checkpoint if it exists
@@ -535,4 +545,4 @@ if __name__ == '__main__':
 
 
     trainer = Trainer(model, optimizer, lr_scheduler, loss_function, validation_function, output_paths, hparams)
-    trainer.train(datasets, **config['general'])
+    trainer.train(datasets, **config['general'], use_tqdm=global_config['use_tqdm'])
