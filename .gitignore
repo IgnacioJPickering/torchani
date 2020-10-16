@@ -42,3 +42,4 @@ htmlcov/
 *tfevents*
 /training_outputs/*/
 /tools/benchmarks/*
+nohup.out
