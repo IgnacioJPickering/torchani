@@ -44,6 +44,7 @@ if __name__ == "__main__":
     parser.add_argument('-m', '--model', default='ani1x_one')
     parser.add_argument('-t', '--trials', default=5)
     parser.add_argument('-p', '--plot', action='store_true', default=False)
+    parser.add_argument('--pbc', action='store_true', default=False)
     args = parser.parse_args()
 
     file_name = args.file_name or args.model
@@ -85,9 +86,16 @@ if __name__ == "__main__":
                 tiled_species, tiled_coord = geometry.tile_into_cube((species, coordinates),
                                                             noise=0.2,
                                                             repeats=r + 1)
-                molecule = ase.Atoms(tiled_species.squeeze().tolist(),
-                                     positions=tiled_coord.squeeze().tolist(),
-                                     calculator=model.ase())
+                if args.pbc:
+                    molecule = ase.Atoms(tiled_species.squeeze().tolist(),
+                                         positions=tiled_coord.squeeze().tolist(),
+                                         calculator=model.ase(), pbc=True,
+                                         cell=np.asarray([3.5, 3.5, 3.5]) * (r +
+                                             1))
+                else:
+                    molecule = ase.Atoms(tiled_species.squeeze().tolist(),
+                                         positions=tiled_coord.squeeze().tolist(),
+                                         calculator=model.ase())
                 tiled_coord.requires_grad_()
                 dyn = Langevin(molecule, 1.0 * units.fs, 300 * units.kB, 0.2)
 
