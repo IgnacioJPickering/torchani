@@ -491,6 +491,7 @@ if __name__ == '__main__':
     # setting shift before output to false makes the model NOT add saes before output
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model = TemplateModel.from_yaml(config).to(device).shift_before_output_(False)
+    model.train()
     init_function = getattr(torchani.training, config['init']['function'])
     model.apply(init_function)
 
