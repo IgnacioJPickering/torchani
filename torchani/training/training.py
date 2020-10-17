@@ -141,8 +141,9 @@ class MultiTaskPairwiseLoss(torch.nn.Module):
             self.register_buffer('weights', torch.tensor(weights,
                 dtype=torch.double))
         else:
-            self.register_buffer('weights', torch.ones(num_inputs,
-                dtype=torch.double) * 1 / num_inputs)
+            pairs = num_inputs * (num_inputs - 1) // 2
+            self.register_buffer('weights', torch.ones(pairs,
+                dtype=torch.double) * 1 / pairs)
 
         row_major = torch.arange(0, num_inputs* num_inputs).reshape(num_inputs, num_inputs)
         idxs = torch.triu(row_major, diagonal=1)
@@ -166,7 +167,8 @@ class MultiTaskPairwiseLoss(torch.nn.Module):
         squares = self.mse(diff_predicted, diff_target)
         losses = (squares / num_atoms.sqrt().reshape(-1, 1)).mean(dim=0)
         loss = (losses * self.weights).sum()
-        return  loss, losses.detach()
+        # I don't need one million losses so I don't even output them
+        return  loss, None
 
 class MultiTaskUncertaintyLoss(torch.nn.Module):
 
