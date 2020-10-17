@@ -128,6 +128,46 @@ class MultiTaskLoss(torch.nn.Module):
         loss = (losses * self.weights).sum()
         return  loss, losses.detach()
 
+class MultiTaskPairwiseLoss(torch.nn.Module):
+    # this function can be used even if the input has multiple
+    # values, in that case it just adds up the values, multiplies 
+    # them by weights (or performs an average) and outputs both the individual
+    # values and the sum as a loss
+
+    def __init__(self, weights=None, num_inputs=11):
+        super().__init__()
+        self.mse =  torch.nn.MSELoss(reduction='none')
+        if weights is not None:
+            self.register_buffer('weights', torch.tensor(weights,
+                dtype=torch.double))
+        else:
+            self.register_buffer('weights', torch.ones(num_inputs,
+                dtype=torch.double) * 1 / num_inputs)
+
+        row_major = torch.arange(0, num_inputs* num_inputs).reshape(num_inputs, num_inputs)
+        idxs = torch.triu(row_major, diagonal=1)
+        idxs = torch.masked_select(idxs, idxs != 0)
+        self.register_buffer('idxs', idxs)
+
+    def forward(self, predicted, target, species):
+        num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
+
+        # get absolute energies
+        predicted[1:] = predicted[1:] + predicted[0]
+        target[1:] = target[1:] + target[0]
+
+        # get all pairwise differences
+        diff = target.unsqueeze(2) - target.unsqueeze(1)
+        diff_predicted = predicted.unsqueeze(2) - predicted.unsqueeze(1)
+
+        diff_target = diff.flatten(start_dim=1)[:, self.idxs]
+        diff_predicted = diff_predicted.flatten(start_dim=1)[:, self.idxs]
+
+        squares = self.mse(diff_predicted, diff_target)
+        losses = (squares / num_atoms.sqrt().reshape(-1, 1)).mean(dim=0)
+        loss = (losses * self.weights).sum()
+        return  loss, losses.detach()
+
 class MultiTaskUncertaintyLoss(torch.nn.Module):
 
     def __init__(self, num_inputs=10, weight_sqrt_atoms=True):
