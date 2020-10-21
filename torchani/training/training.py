@@ -128,6 +128,30 @@ class MultiTaskLoss(torch.nn.Module):
         loss = (losses * self.weights).sum()
         return  loss, losses.detach()
 
+class MultiTaskRelative(torch.nn.Module):
+    # this function can be used even if the input has multiple
+    # values, in that case it just adds up the values, multiplies 
+    # them by weights (or performs an average) and outputs both the individual
+    # values and the sum as a loss
+
+    def __init__(self, weights=None, num_inputs=10):
+        super().__init__()
+        self.mse =  torch.nn.MSELoss(reduction='none')
+        if weights is not None:
+            self.register_buffer('weights', torch.tensor(weights,
+                dtype=torch.double))
+        else:
+            self.register_buffer('weights', torch.ones(num_inputs,
+                dtype=torch.double) * 1 / num_inputs)
+
+    def forward(self, predicted, target, species):
+        square_ground = self.mse(predicted[0], target[0])
+        squares_ex = self.mse(predicted[1:]/target[1:], target[1:])
+        squares = torch.cat((square_ground, squares_ex), dim=-1)
+        losses = (squares).mean(dim=0)
+        loss = (losses * self.weights).sum()
+        return  loss, losses.detach()
+
 class MultiTaskBareLoss(torch.nn.Module):
     # this function can be used even if the input has multiple
     # values, in that case it just adds up the values, multiplies 
