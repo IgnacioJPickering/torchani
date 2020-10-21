@@ -76,8 +76,8 @@ ani_model:
 atomic_network:
     class: 'AtomicNetworkResidualV2'
     dim_in: 384
-    dims_shared:  [192, 192, 96]
-    dims_specific: [96, 96]
+    dims_shared:  [192, 192, 96, 96]
+    dims_specific: [96, 96, 96]
     num_outputs: 11
 
 # no custom class is supported for this at the moment
