@@ -1,7 +1,7 @@
 # parameters associated with dataset
 random_search:
     batch_size: [512, 2048]
-    lr: [1.e-3, 1.e-5]
+    lr: [1.e-5, 1.e-3]
 
 datasets:
     dataset_path: 'all_excited.pkl'
