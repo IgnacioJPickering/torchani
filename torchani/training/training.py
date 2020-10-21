@@ -153,6 +153,38 @@ class MultiTaskRelativeLoss(torch.nn.Module):
         loss = (losses * self.weights).sum()
         return  loss, losses.detach()
 
+class MultiTaskSpectraLoss(torch.nn.Module):
+    # this function can be used even if the input has multiple
+    # values, in that case it just adds up the values, multiplies 
+    # them by weights (or performs an average) and outputs both the individual
+    # values and the sum as a loss
+
+    def __init__(self, weights=None, num_inputs=11, num_inputs_other=10, dipoles=False):
+        super().__init__()
+        self.mse =  torch.nn.MSELoss(reduction='none')
+        if weights is not None:
+            self.register_buffer('weights', torch.tensor(weights,
+                dtype=torch.double))
+        else:
+            if dipoles:
+                # I will rescale the dipoles manually with weights if needed
+                self.register_buffer('weights', torch.ones(num_inputs + 3 * num_inputs_other,
+                    dtype=torch.double) * 1 / (num_inputs + 3 * num_inputs_other))
+            else:
+                self.register_buffer('weights', torch.ones(num_inputs + num_inputs_other,
+                    dtype=torch.double) * 1 / (num_inputs + num_inputs_other))
+
+        self.num_inputs_other = num_inputs_other
+        self.dipoles = dipoles
+
+    def forward(self, predicted, target,  target_other, predicted_other, species):
+
+        target = torch.cat((target, target_other), dim=-1)
+        predicted = torch.cat((predicted, predicted_other), dim=-1)
+        losses = (self.mse(predicted, target)).mean(dim=0)
+        loss = (losses * self.weights).sum()
+        return  loss, losses.detach()
+
 class MultiTaskBareLoss(torch.nn.Module):
     # this function can be used even if the input has multiple
     # values, in that case it just adds up the values, multiplies 

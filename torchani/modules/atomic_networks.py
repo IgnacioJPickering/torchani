@@ -270,15 +270,15 @@ class AtomicNetworkResidualV2(torch.nn.Module):
         dims_specific.insert(0, dims_shared[-1])
         
         # total residual blocks
-        L = len(dims_shared) // 2 + len(dims_specific) // 2
+        self.L = len(dims_shared) // 2 + len(dims_specific) // 2
         if fixup:
             assert not batch_norm
 
 
         # shared layers get put into a Sequential module
-        self.residuals_shared = self._make_residual_layers(dims_shared, celu_alpha, batch_norm, fixup=fixup, L=L)
-        self.residuals_ground = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=1, fixup=fixup, L=L)
-        self.residuals_ex = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_outputs-1, fixup=fixup, L=L)
+        self.residuals_shared = self._make_residual_layers(dims_shared, celu_alpha, batch_norm, fixup=fixup, L=self.L)
+        self.residuals_ground = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=1, fixup=fixup, L=self.L)
+        self.residuals_ex = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_outputs-1, fixup=fixup, L=self.L)
 
     @staticmethod
     def _make_residual_layers(dims, celu_alpha, batch_norm, collapse_to=None, fixup=False, L=0):
@@ -306,6 +306,34 @@ class AtomicNetworkResidualV2(torch.nn.Module):
         # combine all outputs into one
         outputs = torch.cat((energy, ex), dim=-1)
         return outputs
+
+class AtomicNetworkPlusScalar(AtomicNetworkResidualV2):
+    def __init__(
+            self,
+            dim_in=384,
+            # 2 shared layers, these are the OUTPUT dimensions
+            # each of this dimensions corresponds to 2 blocks
+            dims_shared=[192, 192, 96],
+            # once again these correspond each to two blocks
+            dims_specific=[96, 96],
+            celu_alpha=0.1,
+            num_outputs=1,
+            batch_norm=False,
+            fixup=False):
+        super().__init__(dim_in, dims_shared, dims_specific, celu_alpha, num_outputs, batch_norm, fixup)
+        self.residuals_magnitudes = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_outputs-1, fixup=fixup, L=self.L)
+
+    def forward(self, x):
+        # first go through shared modules
+        out = self.residuals_shared(x)
+        energy = self.residuals_ground(out)
+        ex = self.residuals_ex(out)
+        mags = self.residuals_magnitudes(out)
+        # combine all outputs into one
+        outputs = torch.cat((energy, ex), dim=-1)
+        return outputs, mags
+
+    
 
 
 class AtomicNetworkSpecFlexMultiple(torch.nn.Module):
@@ -396,89 +424,3 @@ class AtomicNetworkSpecFlexMultiple(torch.nn.Module):
         # combine all outputs into one
         outputs = torch.cat(outputs, dim=-1)
         return outputs
-
-
-class AtomicNetworkPlusScalar(torch.nn.Module):
-    """Extra atomic network that predicts an extra scalar, which
-    could be a charge, a dipole squared or a oscilator strength"""
-
-    # basically this is the one I want to use, the other ones are way too
-    # simple
-    def __init__(
-            self,
-            dim_in=384,
-            # 2 shared layers, these are the OUTPUT dimensions
-            dims_shared=[192, 96],
-            # 2 specific layers, these are the OUTPUT dimensions
-            dims_specific=[96, 96],
-            celu_alpha=0.1,
-            num_outputs=1,
-            batch_norm=False,
-            final_layer_bias=False):
-        super().__init__()
-
-        # make dimensions match automatically, insert the input dimension as
-        # first dimension of the shared layers, and the last dimension of the
-        # shared layers as the first dimension of the specific layers
-        dims_shared.insert(0, dim_in)
-        if dims_specific:
-            dims_specific.insert(0, dims_shared[-1])
-
-        # if dims_specific is empty then the specific layer is just one linear
-        # layer, which amounts to vector dot product, or multiplying all
-        # outputs by one big matrix
-        range_shared = range(len(dims_shared) - 1)
-        range_specific = range(len(dims_specific) - 1)
-
-        # shared layers get put into a Sequential module
-        residuals_shared = (ResidualBlock(dims_shared[j],
-                                          dims_shared[j + 1],
-                                          celu_alpha=celu_alpha,
-                                          batch_norm=batch_norm)
-                            for j in range_shared)
-        self.residuals_shared = torch.nn.Sequential(*residuals_shared)
-
-        # specific layers
-        output_modules = []
-        for j in range(num_outputs):
-            if dims_specific:
-                residuals_specific = [
-                    ResidualBlock(dims_specific[j],
-                                  dims_specific[j + 1],
-                                  batch_norm=batch_norm)
-                    for j in range_specific
-                ]
-                residuals_specific.append(
-                    torch.nn.Linear(dims_specific[-1],
-                                    1,
-                                    bias=final_layer_bias))
-            else:
-                residuals_specific = [
-                    torch.nn.Linear(dims_shared[-1], 1, bias=final_layer_bias)
-                ]
-            # the last one is always a linear layer that ends on 1
-
-            # turn into a sequential and append to output modules
-            residuals_specific = torch.nn.Sequential(*residuals_specific)
-            output_modules.append(residuals_specific)
-
-        # turn output_modules into a correctly registered list of modules
-        # to be applied in a loop
-        self.output_modules = torch.nn.ModuleList(output_modules)
-
-        # this module outputs the extra scalars, all together as a vector
-        self.output_extra_scalars = torch.nn.Sequential(
-            ResidualBlock(dims_specific[0], dims_specific[0] // 2),
-            torch.nn.Linear(dims_specific[0] // 2, num_outputs))
-
-    def forward(self, x):
-        # first go through shared modules
-        out = self.residuals_shared(x)
-        # afterwards go through energy-specific modules
-        outputs = [m(out) for m in self.output_modules]
-        # extra scalars are simultaneously calculated
-        extra_scalars = self.output_extra_scalars(out)
-        # combine all outputs into one
-        outputs = torch.cat(outputs, dim=-1)
-        assert outputs.shape == extra_scalars.shape
-        return outputs, extra_scalars

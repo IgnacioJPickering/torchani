@@ -75,87 +75,38 @@ class Trainer:
        else:
            return loss, None
 
-    def excited_state_and_dipoles_loop(self, batch_number, conformation):
-        species = conformation['species'].to(self.device, non_blocking=True)
-        coordinates = conformation['coordinates'].to(self.device, non_blocking=True).float()
-        # target ground_energies is of shape (C, )
-        target_ground = conformation['energies'].to(self.device, non_blocking=True).float()
-        target_ground_dipoles = conformation['dipoles'].to(self.device, non_blocking=True).float()
-        # target excited energies is of shape (C, 10)
-        target_excited = conformation['energies_ex'].to(self.device, non_blocking=True).float()
-        # TODO: Check if dipoles are in the correct order when inside the dataset
-        target_excited_dipoles = conformation['dipoles_ex'].to(self.device, non_blocking=True).float().permute(0, 2, 1) 
-        target_energies = torch.cat((target_ground.reshape(-1, 1), target_excited), dim=-1)
-        target_dipoles = torch.cat((target_ground_dipoles.unsqueeze(-1), target_excited_dipoles), dim=-1)
-        # zero gradients in the parameter tensors
-        self.optimizer.zero_grad()
-        
-        # Forwards + backwards + optimize (every batch)
-        # with one energy predicted energies is if shape (C, )
-        # with 10 excited energies it is of shape (C, 11) (one ground + 10 excited)
-        _, predicted_energies, predicted_dipoles = self.model((species, coordinates))
-        # I need a loss function for excited state energies
-        # note that this loss takes in energies AND dipoles!
-        loss, losses = self.loss_function(predicted_energies, target_energies, predicted_dipoles, target_dipoles, species)
-        loss.backward()
-        self.optimizer.step()
-        
-        # Log per batch info
-        if self.log_every_batch:
-            self.log_per_batch(loss, batch_number, other=losses)
-            return None, None
-        else:
-            return loss, losses
+    def excited_state_and_foscs_loop(self, batch_number, conformation):
+        # train against energies and ex dipoles (or foscs or sqdipoles), validate 
+        # on fosc
 
-    def excited_state_and_excited_foscs(self, batch_number, conformation):
         species = conformation['species'].to(self.device, non_blocking=True)
         coordinates = conformation['coordinates'].to(self.device, non_blocking=True).float()
         # target ground_energies is of shape (C, )
         target_ground = conformation['energies'].to(self.device, non_blocking=True).float()
         # target excited energies is of shape (C, 10)
-        target_excited = conformation['energies_ex'].to(self.device, non_blocking=True).float()
-        target_foscs = conformation['foscs'].to(self.device, non_blocking=True).float()
-        target_energies = torch.cat((target_ground.reshape(-1, 1), target_excited), dim=-1)
-        # zero gradients in the parameter tensors
-        self.optimizer.zero_grad()
-        
-        # Forwards + backwards + optimize (every batch)
-        # with one energy predicted energies is if shape (C, )
-        # with 10 excited energies it is of shape (C, 11) (one ground + 10 excited)
-        _, predicted_energies, predicted_foscs = self.model((species, coordinates))
-        # I need a loss function for excited state energies
-        # note that this loss takes in energies AND dipoles!
-        loss, losses = self.loss_function(predicted_energies, target_energies, predicted_foscs, target_foscs, species)
-        loss.backward()
-        self.optimizer.step()
-        
-        # Log per batch info
-        if self.log_every_batch:
-            self.log_per_batch(loss, batch_number, other=losses)
-            return None, None
-        else:
-            return loss, losses
+        target_ex = conformation['energies_ex'].to(self.device, non_blocking=True).float()
 
-    def excited_state_and_excited_sqdipoles(self, batch_number, conformation):
-        species = conformation['species'].to(self.device, non_blocking=True)
-        coordinates = conformation['coordinates'].to(self.device, non_blocking=True).float()
-        # target ground_energies is of shape (C, )
-        target_ground = conformation['energies'].to(self.device, non_blocking=True).float()
-        # target excited energies is of shape (C, 10)
-        target_excited = conformation['energies_ex'].to(self.device, non_blocking=True).float()
-        # TODO: Check if dipoles are in the correct order when inside the dataset
-        target_excited_sqdipoles = conformation['sqdipoles_ex'].to(self.device, non_blocking=True).float()
-        target_energies = torch.cat((target_ground.reshape(-1, 1), target_excited), dim=-1)
+        if self.foscs_only:
+            other_ex = conformation['foscs'].to(self.device, non_blocking=True).float()
+        elif self.sqdipoles_only:
+            other_ex = conformation['sqdipoles_ex'].to(self.device, non_blocking=True).float()
+        else:
+            other_ex = conformation['dipoles_ex'].to(self.device, non_blocking=True).float().permute(0, 2, 1) 
+
+        target_energies = torch.cat((target_ground.reshape(-1, 1), target_ex), dim=-1)
         # zero gradients in the parameter tensors
         self.optimizer.zero_grad()
         
         # Forwards + backwards + optimize (every batch)
         # with one energy predicted energies is if shape (C, )
         # with 10 excited energies it is of shape (C, 11) (one ground + 10 excited)
-        _, predicted_energies, predicted_sqdipoles = self.model((species, coordinates))
+
+        # I will only predict ex dipoles or sqdipoles or foscs
+        _, predicted_energies, predicted_other_ex = self.model((species, coordinates))
+
         # I need a loss function for excited state energies
         # note that this loss takes in energies AND dipoles!
-        loss, losses = self.loss_function(predicted_energies, target_energies, predicted_sqdipoles, target_excited_sqdipoles, species)
+        loss, losses = self.loss_function(predicted_energies, target_energies, predicted_other_ex, other_ex, species)
         loss.backward()
         self.optimizer.step()
         
