@@ -194,7 +194,6 @@ class Trainer:
             return loss, losses
 
     def train(self, datasets, use_tqdm=False, max_epochs=maxsize, early_stopping_lr=0.0, loop='ground_state_loop', log_every_batch=False):
-
         self.log_every_batch = log_every_batch
         # If the model is already trained, just exit, else, train
         if self.lr_scheduler.last_epoch == max_epochs: 

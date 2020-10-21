@@ -77,9 +77,9 @@ ani_model:
 
 # AtomicNetwork Hyperparameters
 atomic_network:
-    class: 'AtomicNetworkSpecFlexMultiple'
+    class: 'AtomicNetworkResidualV2'
     dim_in: 384
-    dims_shared:  [192, 96]
+    dims_shared:  [192, 192, 96]
     dims_specific: [96, 96]
     num_outputs: 11
 

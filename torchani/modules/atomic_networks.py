@@ -1,6 +1,6 @@
 """Contains different versions of the main ANIModel module"""
 import torch
-from .residual_blocks import ResidualBlock
+from .residual_blocks import ResidualBlock, FixupBlock
 
 
 class Normalizer(torch.nn.Module):
@@ -241,6 +241,70 @@ class AtomicNetworkFlexMultiple(torch.nn.Module):
         # apply distinct non shared weights in a parallelizable loop
         outputs = [m(out) * f for m, f in zip(self.distinct, self.factors)]
         outputs = torch.cat(outputs, dim=-1)
+        return outputs
+
+class AtomicNetworkResidualV2(torch.nn.Module):
+    """custom atomic network with residual connections, many specific features"""
+
+    # better implementation of a residual network 
+    # basically this is the one I want to use, the other ones are way too
+    # simple
+    def __init__(
+            self,
+            dim_in=384,
+            # 2 shared layers, these are the OUTPUT dimensions
+            # each of this dimensions corresponds to 2 blocks
+            dims_shared=[192, 192, 96],
+            # once again these correspond each to two blocks
+            dims_specific=[96, 96],
+            celu_alpha=0.1,
+            num_outputs=1,
+            batch_norm=False,
+            fixup=False):
+        super().__init__()
+
+        # make dimensions match automatically, insert the input dimension as
+        # first dimension of the shared layers, and the last dimension of the
+        # shared layers as the first dimension of the specific layers
+        dims_shared.insert(0, dim_in)
+        dims_specific.insert(0, dims_shared[-1])
+        
+        # total residual blocks
+        L = len(dims_shared) // 2 + len(dims_specific) // 2
+        if fixup:
+            assert not batch_norm
+
+
+        # shared layers get put into a Sequential module
+        self.residuals_shared = self._make_residual_layers(dims_shared, celu_alpha, batch_norm, fixup=fixup, L=L)
+        self.residuals_ground = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=1, fixup=fixup, L=L)
+        self.residuals_ex = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_outputs-1, fixup=fixup, L=L)
+
+    @staticmethod
+    def _make_residual_layers(dims, celu_alpha, batch_norm, collapse_to=None, fixup=False, L=0):
+        residuals = []
+        for d0, d1 in zip(dims[:-1], dims[1:]):
+            if d0 == d1:
+                if fixup:
+                    residuals.append(FixupBlock(d0, None, L=L))
+                else:
+                    residuals.append(ResidualBlock(d0, None, celu_alpha, batch_norm))
+            else:
+                if fixup:
+                    residuals.append(FixupBlock(d0, d1, L=L))
+                else:
+                    residuals.append(ResidualBlock(d0, d1, celu_alpha, batch_norm))
+        if collapse_to is not None:
+            residuals.append(torch.nn.Linear(dims[-1], collapse_to))
+        return torch.nn.Sequential(*residuals)
+
+    def forward(self, x):
+        # first go through shared modules
+        out = self.residuals_shared(x)
+        energy = self.residuals_ground(out)
+        ex = self.residuals_ex(out)
+        # combine all outputs into one
+        outputs = torch.cat((energy, ex), dim=-1)
         return outputs
 
 
