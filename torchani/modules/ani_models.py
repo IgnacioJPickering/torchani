@@ -101,6 +101,42 @@ class ANIModelMultiple(ANIModel):
         output = self.squeezer(output)
         return SpeciesEnergies(species, torch.sum(output, dim=1))
 
+class ANIModelScaledMultiple(ANIModelMultiple):
+
+    def forward(
+            self,
+            species_aev: Tuple[Tensor, Tensor],
+            cell: Optional[Tensor] = None,
+            pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+        species, aev = species_aev
+        assert species.shape == aev.shape[:-1]
+        #shape of species is now C, A
+        #shape of species is now C x A
+        species_ = species.flatten()
+        #shape of AEV is C x A, other
+        aev = aev.flatten(0, 1)
+        # shape of output will be (C x A, O)
+        output = aev.new_zeros((species_.shape[0], self.num_outputs))
+
+        # optionally a pass through a shared model is performed
+        aev = self.shared_module(aev)
+        for i, m in enumerate(self.values()):
+            mask = (species_ == i)
+            midx = mask.nonzero().flatten()
+            if midx.shape[0] > 0:
+                input_ = aev.index_select(0, midx)
+                mask = mask.unsqueeze(-1).repeat(1,self.num_outputs)
+                output.masked_scatter_(mask, m(input_))
+
+        output = output.reshape((*species.shape, -1))
+        output = self.squeezer(output)
+        
+        # normalize output of excited states because
+        # excited state energies are always order 1
+        output[:, :, 1:] = output[:, :, 1:]/(species >= 0).sum(dim=1).reshape(-1, 1, 1)
+
+        return SpeciesEnergies(species, torch.sum(output, dim=1))
+
 class ANIModelDipoles(ANIModelMultiple):
     """ANI model that compute energies and charges, 
     can output dipoles if asked to do so"""
