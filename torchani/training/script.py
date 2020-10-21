@@ -69,7 +69,11 @@ class Trainer:
        self.optimizer.step()
        
        # Log per batch info
-       self.log_per_batch(loss, batch_number)
+       if self.log_every_batch:
+           self.log_per_batch(loss, batch_number)
+           return None, None
+       else:
+           return loss, None
 
     def excited_state_and_dipoles_loop(self, batch_number, conformation):
         species = conformation['species'].to(self.device, non_blocking=True)
@@ -97,7 +101,11 @@ class Trainer:
         self.optimizer.step()
         
         # Log per batch info
-        self.log_per_batch(loss, batch_number, other=losses)
+        if self.log_every_batch:
+            self.log_per_batch(loss, batch_number, other=losses)
+            return None, None
+        else:
+            return loss, losses
 
     def excited_state_and_excited_foscs(self, batch_number, conformation):
         species = conformation['species'].to(self.device, non_blocking=True)
@@ -122,7 +130,11 @@ class Trainer:
         self.optimizer.step()
         
         # Log per batch info
-        self.log_per_batch(loss, batch_number, other=losses)
+        if self.log_every_batch:
+            self.log_per_batch(loss, batch_number, other=losses)
+            return None, None
+        else:
+            return loss, losses
 
     def excited_state_and_excited_sqdipoles(self, batch_number, conformation):
         species = conformation['species'].to(self.device, non_blocking=True)
@@ -148,7 +160,11 @@ class Trainer:
         self.optimizer.step()
         
         # Log per batch info
-        self.log_per_batch(loss, batch_number, other=losses)
+        if self.log_every_batch:
+            self.log_per_batch(loss, batch_number, other=losses)
+            return None, None
+        else:
+            return loss, losses
     
     def excited_state_loop(self, batch_number, conformation):
         species = conformation['species'].to(self.device, non_blocking=True)
@@ -171,9 +187,15 @@ class Trainer:
         self.optimizer.step()
         
         # Log per batch info
-        self.log_per_batch(loss, batch_number, other=losses)
+        if self.log_every_batch:
+            self.log_per_batch(loss, batch_number, other=losses)
+            return None, None
+        else:
+            return loss, losses
 
-    def train(self, datasets, use_tqdm=False, max_epochs=maxsize, early_stopping_lr=0.0, loop='ground_state_loop'):
+    def train(self, datasets, use_tqdm=False, max_epochs=maxsize, early_stopping_lr=0.0, loop='ground_state_loop', log_every_batch=False):
+
+        self.log_every_batch = log_every_batch
         # If the model is already trained, just exit, else, train
         if self.lr_scheduler.last_epoch == max_epochs: 
             if self.verbose: print(f'Model fully trained, with {max_epochs} epochs')
@@ -207,7 +229,7 @@ class Trainer:
             training_loop = getattr(self, loop)
             for i, conformation in conformations:
                 batch_number = i + self.lr_scheduler.last_epoch * total_batches
-                training_loop(batch_number, conformation)
+                loss, other_losses = training_loop(batch_number, conformation)
         
             # Validate (every epoch)
             main_metric, metrics = self.validate(self.model, validation)
@@ -224,7 +246,7 @@ class Trainer:
             end = time.time()
 
             # Log per epoch info
-            self.log_per_epoch(main_metric, metrics=metrics, epoch_time=end - start)
+            self.log_per_epoch(main_metric, metrics=metrics, epoch_time=end - start, loss=loss, other_losses=other_losses)
             
             # Early stopping
             if self.optimizer.param_groups[0]['lr'] < early_stopping_lr:
@@ -264,7 +286,7 @@ class Trainer:
             for j, l in enumerate(other):
                 self.tensorboard.add_scalar(f'batch_loss_{j}', l, batch_number)
 
-    def log_per_epoch(self, main_metric, metrics=None, epoch_time=None):
+    def log_per_epoch(self, main_metric, metrics=None, epoch_time=None, loss=None, other_losses=None):
         # Other metrics is a dictionary with different metrics
         (main_key, main_value), = main_metric.items()
         if epoch_time is None:
@@ -290,13 +312,16 @@ class Trainer:
             if self.hparams.get('aev_computer/trainable_shifts') or self.hparams.get('aev_computer/trainable_angle_sections'):
                 for j, v in enumerate(self.model.aev_computer.ShfZ.view(-1)):
                     self.tensorboard.add_scalar(f'aev/ShfZ_{j}', v, epoch_number)
-
             if metrics is not None:
                 for k, v in metrics.items():
                     self.tensorboard.add_scalar(f'{k}', v, epoch_number)
-            
             if epoch_time is not None:
                 self.tensorboard.add_scalar('epoch_time', epoch_time, epoch_number)
+            if loss is not None:
+                self.tensorboard.add_scalar('epoch_loss', loss, epoch_number)
+            if other_losses is not None:
+                for j, l in enumerate(other_losses):
+                    self.tensorboard.add_scalar(f'epoch_loss_{j}', l, epoch_number)
         if self.output_paths.csv is not None:
             if not self.output_paths.csv.is_file():
                 with open(self.output_paths.csv, 'w') as f:
@@ -545,4 +570,6 @@ if __name__ == '__main__':
 
 
     trainer = Trainer(model, optimizer, lr_scheduler, loss_function, validation_function, output_paths, hparams)
-    trainer.train(datasets, **config['general'], use_tqdm=global_config['use_tqdm'])
+    trainer.train(datasets, **config['general'],
+            use_tqdm=global_config['use_tqdm'],
+            log_every_batch=global_config['log_every_batch'])
