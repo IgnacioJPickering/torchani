@@ -4,6 +4,7 @@ from sys import maxsize
 import pickle
 import time
 import copy
+import random
 
 import torch
 import yaml
@@ -168,8 +169,15 @@ class Trainer:
                                f" {self.lr_scheduler.last_epoch + 1}\n"
                                f"Dataset has {total_batches} batches")
 
+        # avoid stupidity (?) in data
+        if isinstance(training, data.TransformableIterable):
+            training = list(training)
+
         for _ in range(self.lr_scheduler.last_epoch, max_epochs):
             start = time.time()
+            
+            # shuffling batches
+            random.shuffle(training) 
             
             # Setup tqdm if necessary
             if use_tqdm: 
@@ -179,6 +187,8 @@ class Trainer:
 
             # Perform inner training loop
             training_loop = getattr(self, loop)
+
+
             for i, conformation in conformations:
                 batch_number = i + self.lr_scheduler.last_epoch * total_batches
                 loss, other_losses = training_loop(batch_number, conformation)
