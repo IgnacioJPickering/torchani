@@ -140,17 +140,20 @@ class ANIModelScaledMultiple(ANIModelMultiple):
 class ANIModelDipoles(ANIModelMultiple):
     """ANI model that compute energies and charges, 
     can output dipoles if asked to do so"""
-    def __init__(self, modules, shared_module=None, num_outputs=1,
+    def __init__(self, modules, shared_module=None, num_outputs=1, num_other_outputs=1,
             squeeze_last=False, dipoles=False):
         super().__init__(modules, shared_module, num_outputs, squeeze_last)
-        self.register_buffer('calc_dipoles', torch.bool(dipoles))
+        self.register_buffer('calc_dipoles', torch.tensor(dipoles, dtype=torch.bool))
+        self.num_other_outputs = num_other_outputs
 
     def forward(
             self,
             species_coordinates_aev: Tuple[Tensor, Tensor, Tensor],
             cell: Optional[Tensor] = None,
             pbc: Optional[Tensor] = None) -> SpeciesEnergiesExtra:
-        species, coordinates, aev = species_coordinates_aev
+        species = species_coordinates_aev.species
+        aev = species_coordinates_aev.aevs
+        coordinates = species_coordinates_aev.coordinates
         assert species.shape == aev.shape[:-1]
         #shape of species is now C, A
         #shape of species is now C x A
@@ -161,7 +164,7 @@ class ANIModelDipoles(ANIModelMultiple):
         output_energies = aev.new_zeros(
                 (species_.shape[0], self.num_outputs))
         output_charges = aev.new_zeros(
-                (species_.shape[0], self.num_outputs))
+                (species_.shape[0], self.num_other_outputs))
         # optionally a pass through a shared model is performed
         aev = self.shared_module(aev)
         for i, m in enumerate(self.values()):
@@ -169,12 +172,13 @@ class ANIModelDipoles(ANIModelMultiple):
             midx = mask.nonzero().flatten()
             if midx.shape[0] > 0:
                 input_ = aev.index_select(0, midx)
-                mask = mask.unsqueeze(-1).repeat(1,self.num_outputs)
+                mask_energies = mask.unsqueeze(-1).repeat(1, self.num_outputs)
+                mask_charges = mask.unsqueeze(-1).repeat(1, self.num_other_outputs)
                 # this has to be coupled with a network that can handle
                 # charges somehow
                 energies, charges = m(input_)
-                output_energies.masked_scatter_(mask, energies)
-                output_charges.masked_scatter_(mask, charges)
+                output_energies.masked_scatter_(mask_energies, energies)
+                output_charges.masked_scatter_(mask_charges, charges)
         output_energies = output_energies.reshape((*species.shape, -1))
         output_charges = output_charges.reshape((*species.shape, -1))
         output_energies = self.squeezer(output_energies)

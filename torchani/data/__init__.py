@@ -106,7 +106,8 @@ PADDING = {
     'coordinates': 0.0,
     'forces': 0.0,
     'energies': 0.0, 
-    'energies_ex': 0.0
+    'energies_ex': 0.0, 
+    'foscs_ex': 0.0
 }
 
 

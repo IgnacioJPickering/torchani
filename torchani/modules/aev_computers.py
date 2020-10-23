@@ -147,4 +147,4 @@ class AEVComputerCoord(AEVComputerJoint):
             coordinates = coordinates - com
 
         # coordinates get passed onto the ANIModel in order to calculate dipoles
-        return SpeciesCoordinatesAEV(species, aev, coordinates)
+        return SpeciesCoordinatesAEV(species, coordinates, aev)

@@ -318,10 +318,11 @@ class AtomicNetworkPlusScalar(AtomicNetworkResidualV2):
             dims_specific=[96, 96],
             celu_alpha=0.1,
             num_outputs=1,
+            num_other_outputs=1,
             batch_norm=False,
             fixup=False):
         super().__init__(dim_in, dims_shared, dims_specific, celu_alpha, num_outputs, batch_norm, fixup)
-        self.residuals_magnitudes = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_outputs-1, fixup=fixup, L=self.L)
+        self.residuals_magnitudes = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_other_outputs, fixup=fixup, L=self.L)
 
     def forward(self, x):
         # first go through shared modules
