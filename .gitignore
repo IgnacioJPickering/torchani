@@ -45,4 +45,4 @@ htmlcov/
 # ignore slurm outputs
 *-training.out 
 nohup.out
-slurm_script.sh
+slurm_script*
