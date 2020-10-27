@@ -1,10 +1,9 @@
 # parameters associated with dataset
 #
 random_search:
-    lr: [1.e-5, 1.e-3]
+    lr: [1.e-4, 1.e-3]
     patience: [10, 40]
     weight_decay: [1.e-8, 1.e-4]
-    beta: [5, 20]
 
 datasets:
     # this is the ANI1x released dataset
@@ -80,7 +79,7 @@ atomic_network:
     class: 'AtomicNetworkSoftPlus'
     beta: 10
     dim_in: 384
-    dims:  [128, 112, 96]
+    dims:  [200, 100, 100]
     final_layer_bias: True
 
 # no custom class is supported for this at the moment

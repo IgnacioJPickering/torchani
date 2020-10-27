@@ -1,14 +1,13 @@
 # parameters associated with dataset
-#
 random_search:
-    lr: [1.e-5, 1.e-3]
-    patience: [10, 40]
-    weight_decay: [1.e-8, 1.e-4]
-    beta: [5, 20]
+    lr: [1.e-5, 2.e-3]
+    patience: [10, 50]
+    factor: [0.5, 0.9]
+    weight_decay: [1.e-9, 1.e-5]
 
 datasets:
     # this is the ANI1x released dataset
-    dataset_path: 'ani1x_release.pkl'
+    dataset_path: 'ani1x_release_wb97x_dz.h5'
     batch_size: 2048
     split_percentage: 0.8
     nonstandard_keys : 
@@ -27,7 +26,7 @@ loss:
 
 optimizer:
     class: 'AdamW'
-    lr: 0.0005
+    lr: 0.001
     betas: [0.9, 0.999]
     weight_decay: 1.0e-7
     amsgrad: False
@@ -35,9 +34,9 @@ optimizer:
 
 lr_scheduler:
     class: 'ReduceLROnPlateau'
-    patience: 10
+    patience: 50
     threshold: 6.e-4
-    factor: 0.7
+    factor: 0.5
 
 validation_function: 'validate_energies'
 
@@ -77,11 +76,10 @@ ani_model:
 
 # AtomicNetwork Hyperparameters
 atomic_network:
-    class: 'AtomicNetworkSoftPlus'
-    beta: 10
+    class: 'AtomicNetworkClassic'
     dim_in: 384
     dims:  [128, 112, 96]
-    final_layer_bias: True
+    final_layer_bias: False
 
 # no custom class is supported for this at the moment
 energy_shifter:
