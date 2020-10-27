@@ -18,6 +18,7 @@ class Normalizer(torch.nn.Module):
         return f'mean={self.mean}, std={self.std}'
 
 
+
 class AtomicNetworkClassic(torch.nn.Module):
     """Classic ANI style atomic network"""
     def __init__(self,
@@ -122,6 +123,35 @@ class AtomicNetworkClassic(torch.nn.Module):
         out = out * self.factor
         return out
 
+class AtomicNetworkSoftPlus(AtomicNetworkClassic):
+
+    def __init__(self,
+                 dim_in,
+                 dims,
+                 activation=None,
+                 mean_aev=0.,
+                 std_aev=1.,
+                 factor=1.,
+                 final_layer_bias=False,
+                 other_layers_bias=True, 
+                 beta=1):
+        super().__init__(dim_in, dims, torch.nn.Softplus(beta=beta),
+                mean_aev, std_aev, factor, final_layer_bias, other_layers_bias)
+
+class AtomicNetworkGELU(AtomicNetworkClassic):
+
+    def __init__(self,
+                 dim_in,
+                 dims,
+                 activation=None,
+                 mean_aev=0.,
+                 std_aev=1.,
+                 factor=1.,
+                 final_layer_bias=False,
+                 other_layers_bias=True
+                 ):
+        super().__init__(dim_in, dims, torch.nn.GELU(),
+                mean_aev, std_aev, factor, final_layer_bias, other_layers_bias)
 
 class AtomicNetworkResidual(torch.nn.Module):
     """Custom atomic network with residual connections"""
@@ -318,10 +348,11 @@ class AtomicNetworkPlusScalar(AtomicNetworkResidualV2):
             dims_specific=[96, 96],
             celu_alpha=0.1,
             num_outputs=1,
+            num_other_outputs=1,
             batch_norm=False,
             fixup=False):
         super().__init__(dim_in, dims_shared, dims_specific, celu_alpha, num_outputs, batch_norm, fixup)
-        self.residuals_magnitudes = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_outputs-1, fixup=fixup, L=self.L)
+        self.residuals_magnitudes = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_other_outputs, fixup=fixup, L=self.L)
 
     def forward(self, x):
         # first go through shared modules

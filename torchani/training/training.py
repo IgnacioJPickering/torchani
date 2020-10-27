@@ -48,7 +48,7 @@ def validate_energies_ex(model, validation):
     average_rmse = hartree2kcalmol(rmses_hartree).mean()
     main_metric = {'average_rmse_kcalmol': average_rmse}
     metrics = { f'state_{j}/rmse_kcalmol': v for j, v in enumerate(hartree2kcalmol(rmses_hartree))}
-    metrics = { f'state_{j}/rmse_eV': v for j, v in enumerate(hartree2ev(rmses_hartree))}
+    metrics.update({ f'state_{j}/rmse_eV': v for j, v in enumerate(hartree2ev(rmses_hartree))})
     model.train()
     return main_metric, metrics
 
@@ -57,7 +57,7 @@ def validate_energies_ex_and_foscs(model, validation):
     device = model.aev_computer.ShfR.device
     # run energy validation on a given dataset
     mse = torch.nn.MSELoss(reduction='none')
-    total_mses = torch.zeros(model.neural_networks.num_outputs, device=device, dtype=torch.float)
+    total_mses = torch.zeros(model.neural_networks.num_outputs + model.neural_networks.num_other_outputs, device=device, dtype=torch.float)
     count = 0
     with torch.no_grad():
         for conformation in validation:
@@ -65,11 +65,11 @@ def validate_energies_ex_and_foscs(model, validation):
             coordinates = conformation['coordinates'].to(device).float()
             target_ground = conformation['energies'].to(device).float().reshape(-1, 1)
             target_ex = conformation['energies_ex'].to(device).float()
-            target_foscs = conformation['foscs'].to(device).float()
+            target_foscs = conformation['foscs_ex'].to(device).float()
             target = torch.cat((target_ground, target_ex, target_foscs), dim=-1)
-
             _, predicted_energies, predicted_foscs = model((species, coordinates))
             predicted = torch.cat((predicted_energies, predicted_foscs), dim=-1)
+
             total_mses += mse(predicted, target).sum(dim=0)
             count += predicted_energies.shape[0]
 
@@ -81,8 +81,9 @@ def validate_energies_ex_and_foscs(model, validation):
     main_metric = {'average_rmse_energies_kcalmol': average_rmse_energies}
     metrics = { f'state_{j}/rmse_energies_kcalmol': v for j, v in enumerate(hartree2kcalmol(rmses_au[0:num_outputs]))}
     metrics.update({ f'state_{j}/rmse_energies_eV': v for j, v in enumerate(hartree2ev(rmses_au[0:num_outputs]))})
+
+    metrics.update({ f'average_rmse_foscs_au': average_rmse_foscs})
     metrics.update({ f'state_{j}/rmse_foscs_au': v for j, v in enumerate(rmses_au[num_outputs:])})
-    metrics.update({ f'average_rmse_foscs_au': v for j, v in enumerate(average_rmse_foscs[num_outputs:])})
     model.train()
     return main_metric, metrics
 
@@ -159,7 +160,7 @@ class MultiTaskSpectraLoss(torch.nn.Module):
     # them by weights (or performs an average) and outputs both the individual
     # values and the sum as a loss
 
-    def __init__(self, weights=None, num_inputs=11, num_inputs_other=10, dipoles=False):
+    def __init__(self, weights=None, num_inputs=11, num_other_inputs=10, dipoles=False):
         super().__init__()
         self.mse =  torch.nn.MSELoss(reduction='none')
         if weights is not None:
@@ -168,13 +169,13 @@ class MultiTaskSpectraLoss(torch.nn.Module):
         else:
             if dipoles:
                 # I will rescale the dipoles manually with weights if needed
-                self.register_buffer('weights', torch.ones(num_inputs + 3 * num_inputs_other,
-                    dtype=torch.double) * 1 / (num_inputs + 3 * num_inputs_other))
+                self.register_buffer('weights', torch.ones(num_inputs + 3 * num_other_inputs,
+                    dtype=torch.double) * 1 / (num_inputs + 3 * num_other_inputs))
             else:
-                self.register_buffer('weights', torch.ones(num_inputs + num_inputs_other,
-                    dtype=torch.double) * 1 / (num_inputs + num_inputs_other))
+                self.register_buffer('weights', torch.ones(num_inputs + num_other_inputs,
+                    dtype=torch.double) * 1 / (num_inputs + num_other_inputs))
 
-        self.num_inputs_other = num_inputs_other
+        self.num_other_inputs = num_other_inputs
         self.dipoles = dipoles
 
     def forward(self, predicted, target,  target_other, predicted_other, species):

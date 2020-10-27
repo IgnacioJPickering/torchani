@@ -61,7 +61,12 @@ def stack_with_padding(properties, padding):
         if v[0].dim() == 0:
             output[k] = torch.stack(v)
         else:
-            output[k] = torch.nn.utils.rnn.pad_sequence(v, True, padding[k])
+            if padding.get(k, None) is None:
+                padding_value = 0.0
+                print(f'padding not specified, padding {k} with 0.0')
+            else:
+                padding_value = padding[k]
+            output[k] = torch.nn.utils.rnn.pad_sequence(v, True, padding_value)
     return output
 
 
