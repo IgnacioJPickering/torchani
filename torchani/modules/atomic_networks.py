@@ -18,6 +18,7 @@ class Normalizer(torch.nn.Module):
         return f'mean={self.mean}, std={self.std}'
 
 
+
 class AtomicNetworkClassic(torch.nn.Module):
     """Classic ANI style atomic network"""
     def __init__(self,
@@ -122,6 +123,20 @@ class AtomicNetworkClassic(torch.nn.Module):
         out = out * self.factor
         return out
 
+class AtomicNetworkSoftPlus(AtomicNetworkClassic):
+
+    def __init__(self,
+                 dim_in,
+                 dims,
+                 activation=None,
+                 mean_aev=0.,
+                 std_aev=1.,
+                 factor=1.,
+                 final_layer_bias=False,
+                 other_layers_bias=True, 
+                 beta=1):
+        super().__init__(dim_in, dims, torch.nn.Softplus(beta=beta),
+                mean_aev, std_aev, factor, final_layer_bias, other_layers_bias)
 
 class AtomicNetworkResidual(torch.nn.Module):
     """Custom atomic network with residual connections"""

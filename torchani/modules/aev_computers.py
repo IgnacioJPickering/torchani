@@ -148,3 +148,41 @@ class AEVComputerCoord(AEVComputerJoint):
 
         # coordinates get passed onto the ANIModel in order to calculate dipoles
         return SpeciesCoordinatesAEV(species, coordinates, aev)
+
+class AEVComputerGaus(AEVComputerJoint):
+
+    def forward(self, input_: Tuple[Tensor, Tensor],
+                cell: Optional[Tensor] = None,
+                pbc: Optional[Tensor] = None,
+                masses: Optional[Tensor] = None) -> SpeciesAEV:
+        species, coordinates = input_
+        assert species.shape == coordinates.shape[:-1]
+
+        if cell is None and pbc is None:
+            aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
+        else:
+            assert (cell is not None and pbc is not None)
+            shifts = self.compute_shifts(cell, pbc, self.cutoff)
+            aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
+
+        # coordinates get passed onto the ANIModel in order to calculate dipoles
+        return SpeciesAEV(species, aev)
+
+    def angular_terms(self, Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta:
+            Tensor, ShfA: Tensor, vectors12: Tensor) -> Tensor: 
+        vectors12 = vectors12.view(2, -1, 3, 1, 1, 1)                         
+
+        # change variables
+        mean_vector12 = vectors12.sum(0)/2
+        diff_vectors12 = (vectors12[0] - vectors12[1])/2
+
+        mean_dist = mean_vector12.norm(2, dim=-4)
+        diff_dist = diff_vectors12.norm(2, dim=-4)
+
+        meandiff = torch.cat((mean_dist.unsqueeze(0), diff_dist.unsqueeze(0)), dim=0)
+        fcj12 = self.cutoff_cosine(meandiff, Rca)     
+
+        factor1 = torch.exp(-EtaA * (mean_dist - ShfA) ** 2)
+        factor2 = torch.exp(-Zeta * (diff_dist - ShfZ) ** 2)
+        ret = 2 * factor1 * factor2 * fcj12.prod(0)
+        return ret.flatten(start_dim=1)
