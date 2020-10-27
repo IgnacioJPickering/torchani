@@ -1,0 +1,74 @@
+random_search:
+    lr: [1.e-3, 1.e-4]
+    weight_decay: [1.0e-6, 1.0e-9]
+
+datasets:
+  dataset_path: all_excited.pkl
+  batch_size: 1024
+  split_percentage: 0.9
+  nonstandard_keys:
+    species: species
+    coordinates: coordinates
+    energies: scf_energy
+    energies_ex: energies_ex
+general:
+  early_stopping_lr: 1.0e-10
+  max_epochs: 3000
+  loop: excited_state_loop
+validation_function: validate_energies_ex
+init:
+  function: init_sharp_gaussian
+loss:
+  class: MultiTaskBareLoss
+  num_inputs: 11
+optimizer:
+  class: Adamax
+  lr: 0.00084
+  betas:
+  - 0.9
+  - 0.999
+  weight_decay: 1.0e-07
+  amsgrad: false
+  eps: 1.0e-08
+lr_scheduler:
+  class: ReduceLROnPlateau
+  patience: 60
+  threshold: 0.0005
+  factor: 0.5
+species_converter:
+  species:
+  - H
+  - C
+  - N
+  - O
+aev_computer:
+  class: AEVComputerJoint
+  radial_cutoff: 6.0
+  angular_cutoff: 4.0
+  radial_eta: 16.0
+  angular_eta: 8.0
+  radial_dist_divisions: 18
+  angular_dist_divisions: 6
+  zeta: 32.0
+  angle_sections: 8
+  num_species: 4
+  radial_start: 0.9
+  angular_start: 0.9
+ani_model:
+  class: ANIModelScaledMultiple
+  squeeze_last: false
+  num_outputs: 11
+atomic_network:
+  class: AtomicNetworkResidualV2
+  dim_in: 384
+  dims_shared:
+  - 192
+  - 192
+  - 96
+  dims_specific:
+  - 96
+  - 96
+  num_outputs: 11
+energy_shifter:
+  num_species: 4
+  num_outputs: 11

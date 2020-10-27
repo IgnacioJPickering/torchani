@@ -25,9 +25,11 @@ def load_from_checkpoint(latest_checkpoint, model, optimizer, lr_scheduler, loss
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
-        loss_dict = checkpoint.get('loss_function') 
+        loss_dict = checkpoint.get('loss_function', None) 
         if loss_dict is not None:
             loss_function.load_state_dict(loss_dict)
+        if not isinstance(lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+            lr_scheduler.best = checkpoint['best_metric']
 
 class Trainer:
 
@@ -146,6 +148,8 @@ class Trainer:
             return loss, losses
 
     def train(self, datasets, use_tqdm=False, max_epochs=maxsize, early_stopping_lr=0.0, loop='ground_state_loop', log_every_batch=False, foscs_only=False, sqdipoles_only=False):
+        if not hasattr(lr_scheduler, 'best'):
+            lr_scheduler.best = math.inf # initialize best metric
         self.foscs_only = foscs_only
         self.sqdipoles_only = sqdipoles_only
         self.log_every_batch = log_every_batch
@@ -198,9 +202,14 @@ class Trainer:
         
             # Step the scheduler and save the BEST model (every epoch)
             main_value = list(main_metric.values())[0]
-            if self.lr_scheduler.is_better(main_value, self.lr_scheduler.best):
+            if isinstance(lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+                if self.lr_scheduler.is_better(main_value, self.lr_scheduler.best):
+                    self.save_checkpoint(self.output_paths.best)
+                    self.lr_scheduler.step(main_value)
+            elif main_value < lr_scheduler.best:
                 self.save_checkpoint(self.output_paths.best)
-            self.lr_scheduler.step(main_value)
+                lr_scheduler.best = main_value
+                self.lr_scheduler.step()
 
             # Save LATEST Checkpoint
             self.save_checkpoint(self.output_paths.latest)
@@ -236,6 +245,8 @@ class Trainer:
             'optimizer': self.optimizer.state_dict(),
             'lr_scheduler': self.lr_scheduler.state_dict()
         }
+        if not isinstance(lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+            dictionary.update({'best_metric': lr_scheduler.best})
         if list(self.loss_function.parameters()):
             dictionary.update({'loss_function': self.loss_function.state_dict()})
         torch.save(dictionary
