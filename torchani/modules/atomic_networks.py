@@ -138,6 +138,21 @@ class AtomicNetworkSoftPlus(AtomicNetworkClassic):
         super().__init__(dim_in, dims, torch.nn.Softplus(beta=beta),
                 mean_aev, std_aev, factor, final_layer_bias, other_layers_bias)
 
+class AtomicNetworkGELU(AtomicNetworkClassic):
+
+    def __init__(self,
+                 dim_in,
+                 dims,
+                 activation=None,
+                 mean_aev=0.,
+                 std_aev=1.,
+                 factor=1.,
+                 final_layer_bias=False,
+                 other_layers_bias=True
+                 ):
+        super().__init__(dim_in, dims, torch.nn.GELU(),
+                mean_aev, std_aev, factor, final_layer_bias, other_layers_bias)
+
 class AtomicNetworkResidual(torch.nn.Module):
     """Custom atomic network with residual connections"""
     def __init__(self,
