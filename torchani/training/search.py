@@ -105,10 +105,10 @@ def get_random_parameter_scan(parameter, range_, trials):
     # given a parameter name, and some range and number of trials specification
     # this function returns an array which has trials for that parameter
     log_uniform_params = ['weight_decay', 'lr']
-    integer_params = ['angle_sections', 'radial_dist_divisions', 'angular_dist_divisions']
+    integer_params = ['angle_sections', 'radial_dist_divisions', 'angular_dist_divisions', 'beta', 'patience']
     pow2_params = ['batch_size']
     linear_uniform_params = ['zeta', 'angular_eta', 'radial_eta', 'radial_start',
-            'angular_start', 'radial_cutoff', 'angular_cutoff']
+            'angular_start', 'radial_cutoff', 'angular_cutoff', 'factor']
     
     if parameter in log_uniform_params:
         return log_uniform(low=range_[0], high=range_[1], size=trials).tolist()
