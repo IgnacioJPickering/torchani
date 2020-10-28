@@ -239,10 +239,7 @@ class BuiltinEnsemble(BuiltinModel):
             species_coordinates = self.species_converter(species_coordinates)
         species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
 
-        member_atomic_energies = []
-        for nnp in self.neural_networks:
-            member_atomic_energies.append(nnp._atomic_energies((species, aevs)).unsqueeze(0))
-        member_atomic_energies = torch.cat(member_atomic_energies, dim=0)
+        member_atomic_energies = torch.cat(( nnp._atomic_energies((species, aevs)).unsqueeze(0) for nnp in self.neural_networks), dim=0)
 
         self_energies = self.energy_shifter.self_energies.clone().to(species.device)
         self_energies = self_energies[species]
