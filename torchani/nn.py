@@ -60,7 +60,7 @@ class ANIModel(torch.nn.ModuleDict):
         return SpeciesEnergies(species, torch.sum(atomic_energies, dim=1))
 
     @torch.jit.export
-    def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> SpeciesEnergies:
+    def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> Tensor:
         # Obtain the atomic energies associated with a given tensor of AEV's
         species, aev = species_aev
         assert species.shape == aev.shape[:-1]
