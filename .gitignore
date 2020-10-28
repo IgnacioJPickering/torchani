@@ -38,4 +38,3 @@ Untitled.ipynb
 /test*.py
 .coverage
 htmlcov/
-training_outputs/*
