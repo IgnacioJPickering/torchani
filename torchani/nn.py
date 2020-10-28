@@ -54,9 +54,10 @@ class ANIModel(torch.nn.ModuleDict):
     def forward(self, species_aev: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
-        atomic_energies = self._atomic_energies(species_aev)
+        species, aev = species_aev
+        atomic_energies = self._atomic_energies((species,aev))
         # shape of atomic energies is (C, A)
-        return SpeciesEnergies(species_aev.species, torch.sum(atomic_energies, dim=1))
+        return SpeciesEnergies(species, torch.sum(atomic_energies, dim=1))
 
     @torch.jit.export
     def _atomic_energies(self, species_aev: Tuple[Tensor, Tensor]) -> SpeciesEnergies:
