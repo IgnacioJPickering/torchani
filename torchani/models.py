@@ -29,15 +29,10 @@ directly calculate energies or get an ASE calculator. For example:
     model0.species_to_tensor(['C', 'H', 'H', 'H', 'H'])
 """
 import os
-import io
-import requests
-import glob
-import zipfile
-import shutil
 import torch
 from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
-from . import neurochem
+
 from .nn import SpeciesConverter, SpeciesEnergies
 from .aev import AEVComputer
 
@@ -52,7 +47,7 @@ class BuiltinModel(torch.nn.Module):
     r"""Private template for the builtin ANI models """
 
     def __init__(self, species_converter, aev_computer, neural_networks, energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index):
-        super(BuiltinModel, self).__init__()
+        super().__init__()
         self.species_converter = species_converter
         self.aev_computer = aev_computer
         self.neural_networks = neural_networks
@@ -67,11 +62,14 @@ class BuiltinModel(torch.nn.Module):
 
     @classmethod
     def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False, model_index=0):
+        from . import neurochem  # noqa
+
         # this is used to load only 1 model (by default model 0)
-        consts, sae_file, ensemble_prefix, ensemble_size = cls._parse_neurochem_resources(info_file_path)
+        const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
         if (model_index >= ensemble_size):
             raise ValueError("The ensemble size is only {}, model {} can't be loaded".format(ensemble_size, model_index))
 
+        consts = neurochem.Constants(const_file)
         species_converter = SpeciesConverter(consts.species)
         aev_computer = AEVComputer(**consts)
         energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
@@ -82,54 +80,6 @@ class BuiltinModel(torch.nn.Module):
 
         return cls(species_converter, aev_computer, neural_networks,
                    energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index)
-
-    @staticmethod
-    def _parse_neurochem_resources(info_file_path):
-        def get_resource(resource_path, file_path):
-            return os.path.join(resource_path, file_path)
-
-        resource_path = os.path.join(os.path.dirname(__file__), 'resources/')
-        local_dir = os.path.expanduser('~/.local/torchani/')
-        repo_name = "ani-model-zoo"
-        tag_name = "ani-2x"
-        extracted_name = '{}-{}'.format(repo_name, tag_name)
-        url = "https://github.com/aiqm/{}/archive/{}.zip".format(repo_name, tag_name)
-
-        if not os.path.isfile(get_resource(resource_path, info_file_path)):
-            if not os.path.isfile(get_resource(local_dir, info_file_path)):
-                print('Downloading ANI model parameters ...')
-                resource_res = requests.get(url)
-                resource_zip = zipfile.ZipFile(io.BytesIO(resource_res.content))
-                try:
-                    resource_zip.extractall(resource_path)
-                except PermissionError:
-                    resource_zip.extractall(local_dir)
-                    resource_path = local_dir
-            else:
-                resource_path = local_dir
-
-            files = glob.glob(os.path.join(resource_path, extracted_name, "resources", "*"))
-            for f in files:
-                try:
-                    shutil.move(f, resource_path)
-                except shutil.Error:
-                    pass
-            shutil.rmtree(os.path.join(resource_path, extracted_name))
-
-        info_file = get_resource(resource_path, info_file_path)
-
-        with open(info_file) as f:
-            # const_file: Path to the file with the builtin constants.
-            # sae_file: Path to the file with the Self Atomic Energies.
-            # ensemble_prefix: Prefix of the neurochem resource directories.
-            lines = [x.strip() for x in f.readlines()][:4]
-            const_file_path, sae_file_path, ensemble_prefix_path, ensemble_size = lines
-            const_file = get_resource(resource_path, const_file_path)
-            sae_file = get_resource(resource_path, sae_file_path)
-            ensemble_prefix = get_resource(resource_path, ensemble_prefix_path)
-            ensemble_size = int(ensemble_size)
-            consts = neurochem.Constants(const_file)
-        return consts, sae_file, ensemble_prefix, ensemble_size
 
     def forward(self, species_coordinates: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -149,6 +99,11 @@ class BuiltinModel(torch.nn.Module):
         """
         if self.periodic_table_index:
             species_coordinates = self.species_converter(species_coordinates)
+
+        # check if unknown species are included
+        if species_coordinates[0].ge(self.aev_computer.num_species).any():
+            raise ValueError(f'Unknown species found in {species_coordinates[0]}')
+
         species_aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
         species_energies = self.neural_networks(species_aevs)
         return self.energy_shifter(species_energies)
@@ -226,20 +181,17 @@ class BuiltinEnsemble(BuiltinModel):
 
     def __init__(self, species_converter, aev_computer, neural_networks,
                  energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index):
-        super(BuiltinEnsemble, self).__init__(species_converter,
-                                              aev_computer,
-                                              neural_networks,
-                                              energy_shifter,
-                                              species_to_tensor,
-                                              consts,
-                                              sae_dict,
-                                              periodic_table_index)
+        super().__init__(species_converter, aev_computer, neural_networks,
+                         energy_shifter, species_to_tensor, consts, sae_dict,
+                         periodic_table_index)
 
     @classmethod
     def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False):
+        from . import neurochem  # noqa
         # this is used to load only 1 model (by default model 0)
-        consts, sae_file, ensemble_prefix, ensemble_size = cls._parse_neurochem_resources(info_file_path)
+        const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
 
+        consts = neurochem.Constants(const_file)
         species_converter = SpeciesConverter(consts.species)
         aev_computer = AEVComputer(**consts)
         energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
