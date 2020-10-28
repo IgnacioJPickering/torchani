@@ -55,7 +55,7 @@ class ANIModel(torch.nn.ModuleDict):
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         species, aev = species_aev
-        atomic_energies = self._atomic_energies((species,aev))
+        atomic_energies = self._atomic_energies((species, aev))
         # shape of atomic energies is (C, A)
         return SpeciesEnergies(species, torch.sum(atomic_energies, dim=1))
 
@@ -77,7 +77,6 @@ class ANIModel(torch.nn.ModuleDict):
                 output.masked_scatter_(mask, m(input_).flatten())
         output = output.view_as(species)
         return output
-
 
 
 class Ensemble(torch.nn.ModuleList):

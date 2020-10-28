@@ -110,8 +110,8 @@ class BuiltinModel(torch.nn.Module):
 
     @torch.jit.export
     def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
-                         cell: Optional[Tensor] = None,
-                         pbc: Optional[Tensor] = None) -> SpeciesEnergies:
+                        cell: Optional[Tensor] = None,
+                        pbc: Optional[Tensor] = None) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
         ..warning::
@@ -225,8 +225,8 @@ class BuiltinEnsemble(BuiltinModel):
 
     @torch.jit.export
     def atomic_energies(self, species_coordinates: Tuple[Tensor, Tensor],
-                         cell: Optional[Tensor] = None,
-                         pbc: Optional[Tensor] = None, average: Optional[bool] = True) -> SpeciesEnergies:
+                        cell: Optional[Tensor] = None,
+                        pbc: Optional[Tensor] = None, average: Optional[bool] = True) -> SpeciesEnergies:
         """Calculates predicted atomic energies of all atoms in a molecule
 
         see `:method:torchani.BuiltinModel.atomic_energies`
@@ -239,7 +239,7 @@ class BuiltinEnsemble(BuiltinModel):
             species_coordinates = self.species_converter(species_coordinates)
         species, aevs = self.aev_computer(species_coordinates, cell=cell, pbc=pbc)
 
-        member_atomic_energies = torch.cat(( nnp._atomic_energies((species, aevs)).unsqueeze(0) for nnp in self.neural_networks), dim=0)
+        member_atomic_energies = torch.cat((nnp._atomic_energies((species, aevs)).unsqueeze(0) for nnp in self.neural_networks), dim=0)
 
         self_energies = self.energy_shifter.self_energies.clone().to(species.device)
         self_energies = self_energies[species]
