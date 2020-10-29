@@ -57,6 +57,6 @@ atomic_network:
   - 112
   - 96
   final_layer_bias: false
-  bias_other_layers: false
+  other_layers_bias: false
 energy_shifter:
   num_species: 4
