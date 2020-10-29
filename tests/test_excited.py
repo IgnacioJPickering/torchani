@@ -1,7 +1,7 @@
 import torch
 import unittest
 from collections import OrderedDict
-from torchani.modules import AEVComputerSplit,ANIModelMultiple
+from torchani.modules import AEVComputerSplit,ANIModelMultiple, AEVComputerJoint
 from torchani.modules import AtomicNetworkClassic, AtomicNetworkResidual
 from torchani.modules import AtomicNetworkResidualMultiple, AtomicNetworkSpecFlexMultiple
 from torchani import AEVComputer, ANIModel
@@ -30,6 +30,21 @@ class TestVariantsAEV(unittest.TestCase):
         angular = angular.reshape(conformations, atoms, -1)
         cat_aev = torch.cat([radial, angular], dim=-1)
         self.assertTrue(torch.isclose(cat_aev, aev).all().item())
+
+    def testJoint(self):
+        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        aev_joint = AEVComputerJoint.like_ani1x().to(device)
+        aev_computer = AEVComputer.like_ani1x().to(device)
+        
+        atoms = 10
+        conformations = 1
+        coordinates = torch.rand((conformations, atoms, 3), dtype=torch.float, device=device)*10
+        species = torch.zeros((conformations, atoms), dtype=torch.long, device=device)
+        
+        species, aev = aev_computer((species, coordinates))
+        species, aevj = aev_joint((species, coordinates))
+        
+        self.assertTrue(torch.isclose(aevj, aev).all().item())
 
 
 class TestVariantANIModels(unittest.TestCase):

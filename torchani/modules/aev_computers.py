@@ -81,6 +81,22 @@ class AEVComputerNorm(AEVComputerJoint):
         ret = (1 / self.radial_scales) * torch.exp(-EtaR * (distances - ShfR)**2) * fc
         return ret.flatten(start_dim=1)
 
+class AEVComputerSimpleAngular(AEVComputerJoint):
+
+    def angular_terms(self, Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta: Tensor,
+                      ShfA: Tensor, vectors12: Tensor) -> Tensor:
+        vectors12 = vectors12.view(2, -1, 3, 1, 1)
+        distances12 = vectors12.norm(2, dim=-3).sum(0) / 2
+        cos_angles = 0.95 * torch.nn.functional.cosine_similarity(vectors12[0], vectors12[1], dim=-3)
+        angles = torch.acos(cos_angles)
+        
+        # angular terms are simplified with this factor
+        fc12 = self.cutoff_cosine(distances12, Rca)
+        factor1 = ((1 + torch.cos(angles - ShfZ)) / 2) ** Zeta
+        factor2 = torch.exp(-EtaA * (distances12 - ShfA) ** 2)
+        ret = 2 * factor1 * factor2 * (fc12 **2)
+        return ret.flatten(start_dim=1)
+
 class AEVComputerSplit(AEVComputerJoint):
     r"""AEV Computer that splits the final aev into correctly shaped radial and angular parts
 
@@ -170,7 +186,7 @@ class AEVComputerGaus(AEVComputerJoint):
 
     def angular_terms(self, Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta:
             Tensor, ShfA: Tensor, vectors12: Tensor) -> Tensor: 
-        vectors12 = vectors12.view(2, -1, 3, 1, 1, 1)                         
+        vectors12 = vectors12.view(2, -1, 3, 1, 1)                         
 
         # change variables
         mean_vector12 = vectors12.sum(0)/2
