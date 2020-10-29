@@ -3,7 +3,6 @@ from collections import namedtuple
 from sys import maxsize
 import pickle
 import time
-import math
 import copy
 import random
 
@@ -20,22 +19,22 @@ from torchani.training import get_one_random_instance, insert_in_key, move_setti
 from torch import optim
 from torch.optim import lr_scheduler
 
-def load_from_checkpoint(latest_checkpoint, model, optimizer, lr_scheduler, loss_function):
+def load_from_checkpoint(latest_checkpoint, model, optimizer, lr_scheduler, loss_function, other_scheduler=None):
     if latest_checkpoint.is_file():
         checkpoint = torch.load(latest_checkpoint.as_posix())
         model.load_state_dict(checkpoint['model'])
         optimizer.load_state_dict(checkpoint['optimizer'])
         lr_scheduler.load_state_dict(checkpoint['lr_scheduler'])
+        if other_scheduler is not None:
+            other_scheduler.load_state_dict(checkpoint['other_scheduler'])
         loss_dict = checkpoint.get('loss_function', None) 
         if loss_dict is not None:
             loss_function.load_state_dict(loss_dict)
-        if not isinstance(lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-            lr_scheduler.best = checkpoint['best_metric']
 
 class Trainer:
 
     def __init__(self, model, optimizer, lr_scheduler, loss_function,
-            validation_function, output_paths, hparams, verbose=True):
+            validation_function, output_paths, hparams, other_scheduler=None, verbose=True):
         
         # model, optimizer, lr_scheduler, loss and validation function are
         # custom
@@ -44,6 +43,7 @@ class Trainer:
         self.lr_scheduler = lr_scheduler
         self.loss_function = loss_function
         self.validate = validation_function
+        self.other_scheduler = other_scheduler
 
         self.output_paths = output_paths
         self.hparams = hparams
@@ -149,8 +149,6 @@ class Trainer:
             return loss, losses
 
     def train(self, datasets, use_tqdm=False, max_epochs=maxsize, early_stopping_lr=0.0, loop='ground_state_loop', log_every_batch=False, foscs_only=False, sqdipoles_only=False):
-        if not hasattr(lr_scheduler, 'best'):
-            lr_scheduler.best = math.inf # initialize best metric
         self.foscs_only = foscs_only
         self.sqdipoles_only = sqdipoles_only
         self.log_every_batch = log_every_batch
@@ -203,14 +201,11 @@ class Trainer:
         
             # Step the scheduler and save the BEST model (every epoch)
             main_value = list(main_metric.values())[0]
-            if isinstance(lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-                if self.lr_scheduler.is_better(main_value, self.lr_scheduler.best):
-                    self.save_checkpoint(self.output_paths.best)
-                    self.lr_scheduler.step(main_value)
-            elif main_value < lr_scheduler.best:
+            if self.lr_scheduler.is_better(main_value, self.lr_scheduler.best):
                 self.save_checkpoint(self.output_paths.best)
-                lr_scheduler.best = main_value
-                self.lr_scheduler.step()
+                self.lr_scheduler.step(main_value)
+            if self.other_scheduler is not None:
+                self.other_scheduler.step()
 
             # Save LATEST Checkpoint
             self.save_checkpoint(self.output_paths.latest)
@@ -246,8 +241,8 @@ class Trainer:
             'optimizer': self.optimizer.state_dict(),
             'lr_scheduler': self.lr_scheduler.state_dict()
         }
-        if not isinstance(lr_scheduler, optim.lr_scheduler.ReduceLROnPlateau):
-            dictionary.update({'best_metric': lr_scheduler.best})
+        if self.other_scheduler is not None:
+            dictionary.update({'other_scheduler': self.other_scheduler.state_dict()})
         if list(self.loss_function.parameters()):
             dictionary.update({'loss_function': self.loss_function.state_dict()})
         torch.save(dictionary
@@ -525,7 +520,15 @@ if __name__ == '__main__':
         optimizer_configuration.append(loss_params)
     
     optimizer = Optimizer(optimizer_configuration)
-    lr_scheduler = LrScheduler(optimizer, **config['lr_scheduler'])
+    scheduler = LrScheduler(optimizer, **config['lr_scheduler'])
+    if isinstance(scheduler, optim.lr_scheduler.ReduceLROnPlateau):
+        lr_scheduler = scheduler
+        other_scheduler = None
+    else:
+        # keep RLROP only to keep track of best rmse
+        lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=99999)
+        other_scheduler = scheduler
+
 
     validation_function = getattr(torchani.training, config.pop('validation_function'))
    
@@ -535,7 +538,7 @@ if __name__ == '__main__':
     torch.cuda.empty_cache()
     
     # load model parameters from checkpoint if it exists
-    load_from_checkpoint(output_paths.latest, model, optimizer, lr_scheduler, loss_function)
+    load_from_checkpoint(output_paths.latest, model, optimizer, lr_scheduler, loss_function, other_scheduler=other_scheduler)
 
     # save all hparams that are either floats or ints to tensorboard
     hparams = {}
@@ -543,7 +546,7 @@ if __name__ == '__main__':
         hparams.update({f'{key}/{k}': v for k, v in config[key].items() if isinstance(v, (float, int))})
 
 
-    trainer = Trainer(model, optimizer, lr_scheduler, loss_function, validation_function, output_paths, hparams)
+    trainer = Trainer(model, optimizer, lr_scheduler, loss_function, validation_function, output_paths, hparams, other_scheduler=other_scheduler)
     trainer.train(datasets, **config['general'],
             use_tqdm=global_config['use_tqdm'],
             log_every_batch=global_config['log_every_batch'])
