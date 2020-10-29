@@ -181,7 +181,7 @@ class AEVComputerGaus(AEVComputerJoint):
         
         # it should be possible to simplify this a bit
         meandiff = torch.cat((mean_dist.unsqueeze(0), diff_dist.unsqueeze(0)), dim=0)
-        fc = self.cutoff_cosine(meandiff, Rca)     
+        fc = self.cutoff_cosine(meandiff, Rca).prod(0)
 
         #once again, lets make zeta about 8
         exponent = EtaA * (mean_dist - ShfA) ** 2  + Zeta * (diff_dist - ShfZ) ** 2
