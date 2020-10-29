@@ -2,7 +2,7 @@ from torch import Tensor
 from typing import Tuple, Optional, NamedTuple
 import torch
 
-from .aev_computer_joint import AEVComputerJoint, SpeciesAEV
+from .aev_computer_joint import AEVComputerJoint
 
 class SpeciesSplitAEV(NamedTuple):
     species: Tensor
@@ -34,6 +34,7 @@ class AEVComputerNorm(AEVComputerJoint):
             0.3704739662625683, 
             0.11249284672261844, 
             0.0144858545390771], dtype=torch.float)
+
         if radial_scales is None:
             radial_scales = torch.tensor([
             0.9282837113533762, 
@@ -69,7 +70,7 @@ class AEVComputerNorm(AEVComputerJoint):
 
         fc12 = self.cutoff_cosine(distances12, Rca) ** 2
         # add a normalization factor
-        factor1 = (1 / 1.5 ** Zeta) * ((1 + torch.cos(angles - ShfZ)) / 2) ** Zeta
+        factor1 = ((1 + torch.cos(angles - ShfZ)) / 2) ** Zeta
         factor2 = (1 / self.angle_scales) * torch.exp(-EtaA * (distances12 - ShfA) ** 2)
         ret = factor1 * factor2 * fc12
 
@@ -167,23 +168,6 @@ class AEVComputerCoord(AEVComputerJoint):
 
 class AEVComputerGaus(AEVComputerJoint):
 
-    def forward(self, input_: Tuple[Tensor, Tensor],
-                cell: Optional[Tensor] = None,
-                pbc: Optional[Tensor] = None,
-                masses: Optional[Tensor] = None) -> SpeciesAEV:
-        species, coordinates = input_
-        assert species.shape == coordinates.shape[:-1]
-
-        if cell is None and pbc is None:
-            aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
-        else:
-            assert (cell is not None and pbc is not None)
-            shifts = self.compute_shifts(cell, pbc, self.cutoff)
-            aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
-
-        # coordinates get passed onto the ANIModel in order to calculate dipoles
-        return SpeciesAEV(species, aev)
-
     def angular_terms(self, Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta:
             Tensor, ShfA: Tensor, vectors12: Tensor) -> Tensor: 
         vectors12 = vectors12.view(2, -1, 3, 1, 1)                         
@@ -192,13 +176,32 @@ class AEVComputerGaus(AEVComputerJoint):
         mean_vector12 = vectors12.sum(0)/2
         diff_vectors12 = (vectors12[0] - vectors12[1])/2
 
-        mean_dist = mean_vector12.norm(2, dim=-4)
-        diff_dist = diff_vectors12.norm(2, dim=-4)
-
+        mean_dist = mean_vector12.norm(2, dim=-3)
+        diff_dist = diff_vectors12.norm(2, dim=-3)
+        
+        # it should be possible to simplify this a bit
         meandiff = torch.cat((mean_dist.unsqueeze(0), diff_dist.unsqueeze(0)), dim=0)
-        fcj12 = self.cutoff_cosine(meandiff, Rca)     
+        fc = self.cutoff_cosine(meandiff, Rca)     
 
-        factor1 = torch.exp(-EtaA * (mean_dist - ShfA) ** 2)
-        factor2 = torch.exp(-Zeta * (diff_dist - ShfZ) ** 2)
-        ret = 2 * factor1 * factor2 * fcj12.prod(0)
+        #once again, lets make zeta about 8
+        exponent = EtaA * (mean_dist - ShfA) ** 2  + Zeta * (diff_dist - ShfZ) ** 2
+        factor = torch.exp(-exponent)
+        ret = 4 * factor * fc
+        return ret.flatten(start_dim=1)
+
+class AEVComputerDoubleGaus(AEVComputerJoint):
+
+    def angular_terms(self, Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta: Tensor,
+                      ShfA: Tensor, vectors12: Tensor) -> Tensor:
+        vectors12 = vectors12.view(2, -1, 3, 1, 1)
+        distances12 = vectors12.norm(2, dim=-3)
+        cos_angles = 0.95 * torch.nn.functional.cosine_similarity(vectors12[0], vectors12[1], dim=-3)
+        angles = torch.acos(cos_angles)
+        
+        # angular terms are simplified with this factor
+        # to be 100% consistent with 1x Zeta approx 8
+        fc = self.cutoff_cosine(distances12, Rca).prod(0)
+        exponent = Zeta * (angles - ShfZ) ** 2 + EtaA * (distances12.sum(0)/2 - ShfA) ** 2
+        factor = torch.exp(-exponent)
+        ret = 4 * factor * fc
         return ret.flatten(start_dim=1)
