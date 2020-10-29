@@ -203,7 +203,8 @@ class Trainer:
             main_value = list(main_metric.values())[0]
             if self.lr_scheduler.is_better(main_value, self.lr_scheduler.best):
                 self.save_checkpoint(self.output_paths.best)
-                self.lr_scheduler.step(main_value)
+
+            self.lr_scheduler.step(main_value)
             if self.other_scheduler is not None:
                 self.other_scheduler.step()
 
@@ -526,7 +527,7 @@ if __name__ == '__main__':
         other_scheduler = None
     else:
         # keep RLROP only to keep track of best rmse
-        lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=99999)
+        lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, patience=99999999, threshold=0)
         other_scheduler = scheduler
 
 
