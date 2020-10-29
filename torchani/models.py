@@ -334,7 +334,7 @@ class BuiltinEnsemble(BuiltinModel):
     @torch.jit.export
     def energies_qbcs(self, species_coordinates: Tuple[Tensor, Tensor],
                       cell: Optional[Tensor] = None,
-                      pbc: Optional[Tensor] = None, unbiased: bool = False) -> SpeciesEnergiesQBC:
+                      pbc: Optional[Tensor] = None, unbiased: bool = True) -> SpeciesEnergiesQBC:
         """Calculates predicted predicted energies and qbc factors
 
         QBC factors are used for query-by-committee (QBC) based active learning
@@ -360,7 +360,7 @@ class BuiltinEnsemble(BuiltinModel):
                 to None if PBC is not enabled
             unbiased: if `True` then Bessel's correction is applied to the
                 standard deviation over the ensemble member's. If `False` Bessel's
-                correction is not applied.
+                correction is not applied, True by default.
 
         Returns:
             species_energies_qbcs: species, energies and qbc factors for the
