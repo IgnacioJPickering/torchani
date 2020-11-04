@@ -83,7 +83,7 @@ def validate_energies_ex_and_foscs(model, validation):
     metrics.update({ f'state_{j}/rmse_energies_eV': v for j, v in enumerate(hartree2ev(rmses_au[0:num_outputs]))})
 
     metrics.update({ f'average_rmse_foscs_au': average_rmse_foscs})
-    metrics.update({ f'state_{j}/rmse_foscs_au': v for j, v in enumerate(rmses_au[num_outputs:])})
+    metrics.update({ f'state_{j+1}/rmse_foscs_au': v for j, v in enumerate(rmses_au[num_outputs:])})
     model.train()
     return main_metric, metrics
 
@@ -248,6 +248,97 @@ class MultiTaskPairwiseLoss(torch.nn.Module):
         loss = (losses * self.weights).sum()
         # I don't need one million losses so I don't even output them
         return  loss, None
+
+
+class MTLLoss(torch.nn.Module):
+    """A class to calculate the MTL loss with homoscedastic uncertainty
+    https://arxiv.org/abs/1705.07115
+    Args:
+        losses: a list of task specific loss terms
+        num_tasks: number of tasks
+    """
+    def __init__(self, num_tasks=11):
+        super(MTLLoss, self).__init__()
+        self.num_tasks = num_tasks
+        self.log_sigma = torch.nn.Parameter(torch.zeros((num_tasks)))
+    def get_precisions(self):
+        return 0.5 * torch.exp(- self.log_sigma) ** 2
+
+    def forward(self, *loss_terms):
+        assert len(loss_terms) == self.num_tasks
+        total_loss = 0
+        self.precisions = self.get_precisions()
+        for task in range(self.num_tasks):
+            total_loss += self.precisions[task] * loss_terms[task] + self.log_sigma[task]
+        return total_loss
+
+class MtlSpectraLoss(torch.nn.Module):
+    # this function can be used even if the input has multiple
+    # values, in that case it just adds up the values, multiplies 
+    # them by weights (or performs an average) and outputs both the individual
+    # values and the sum as a loss
+
+    def __init__(self, weights=None, num_inputs=11, num_other_inputs=10, dipoles=False):
+        super().__init__()
+        self.mse =  torch.nn.MSELoss(reduction='none')
+
+        self.num_other_inputs = num_other_inputs
+        self.dipoles = dipoles
+        self.num_tasks = num_inputs + num_other_inputs
+
+        self.log_sigma = torch.nn.Parameter(torch.zeros((num_inputs + num_other_inputs)))
+
+    def get_precisions(self):
+        return 0.5 * torch.exp(- self.log_sigma) ** 2
+
+    def forward(self, predicted, target,  target_other, predicted_other, species):
+
+        target = torch.cat((target, target_other), dim=-1)
+        predicted = torch.cat((predicted, predicted_other), dim=-1)
+        assert len(target[1]) == self.num_tasks
+        self.precisions = self.get_precisions()
+
+        losses = (self.mse(predicted, target)).mean(dim=0)
+        loss = (losses * self.precisions).sum() + self.log_sigma.sum()
+        return  loss, losses.detach()
+
+class MtlThreeSpectraLoss(torch.nn.Module):
+    # this function can be used even if the input has multiple
+    # values, in that case it just adds up the values, multiplies 
+    # them by weights (or performs an average) and outputs both the individual
+    # values and the sum as a loss
+
+    def __init__(self, weights=None, num_inputs=11, num_other_inputs=10, dipoles=False):
+        super().__init__()
+        self.mse =  torch.nn.MSELoss(reduction='none')
+
+        self.num_other_inputs = num_other_inputs
+        self.dipoles = dipoles
+        self.num_inputs = num_inputs
+        self.num_tasks = num_inputs + num_other_inputs
+        self.log_sigma = torch.nn.Parameter(torch.zeros(3))
+
+    def get_precisions(self):
+        return 0.5 * torch.exp(- self.log_sigma) ** 2
+
+    def forward(self, predicted, target,  target_other, predicted_other, species):
+
+        target = torch.cat((target, target_other), dim=-1)
+        predicted = torch.cat((predicted, predicted_other), dim=-1)
+        self.precisions = self.get_precisions()
+
+        losses = (self.mse(predicted, target)).mean(dim=0)
+        loss = 0.0
+        loss += losses[0] * self.precisions[0]
+        loss += (losses[1:self.num_inputs] * self.precisions[1]).sum()
+        loss += (losses[self.num_inputs:self.num_tasks] * self.precisions[2]).sum()
+        loss += self.log_sigma.sum()
+
+        return  loss, losses.detach()
+
+
+
+
 
 class MultiTaskUncertaintyLoss(torch.nn.Module):
 

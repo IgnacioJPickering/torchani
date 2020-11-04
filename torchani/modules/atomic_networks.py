@@ -153,6 +153,21 @@ class AtomicNetworkGELU(AtomicNetworkClassic):
         super().__init__(dim_in, dims, torch.nn.GELU(),
                 mean_aev, std_aev, factor, final_layer_bias, other_layers_bias)
 
+class AtomicNetworkSiLU(AtomicNetworkClassic):
+
+    def __init__(self,
+                 dim_in,
+                 dims,
+                 activation=None,
+                 mean_aev=0.,
+                 std_aev=1.,
+                 factor=1.,
+                 final_layer_bias=False,
+                 other_layers_bias=True
+                 ):
+        super().__init__(dim_in, dims, torch.nn.SiLU(),
+                mean_aev, std_aev, factor, final_layer_bias, other_layers_bias)
+
 class AtomicNetworkResidual(torch.nn.Module):
     """Custom atomic network with residual connections"""
     def __init__(self,
@@ -311,19 +326,19 @@ class AtomicNetworkResidualV2(torch.nn.Module):
         self.residuals_ex = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_outputs-1, fixup=fixup, L=self.L)
 
     @staticmethod
-    def _make_residual_layers(dims, celu_alpha, batch_norm, collapse_to=None, fixup=False, L=0):
+    def _make_residual_layers(dims, celu_alpha, batch_norm, collapse_to=None, fixup=False, L=0, silu=False, gelu=False):
         residuals = []
         for d0, d1 in zip(dims[:-1], dims[1:]):
             if d0 == d1:
                 if fixup:
                     residuals.append(FixupBlock(d0, None, L=L))
                 else:
-                    residuals.append(ResidualBlock(d0, None, celu_alpha, batch_norm))
+                    residuals.append(ResidualBlock(d0, None, celu_alpha, batch_norm, silu=silu, gelu=gelu))
             else:
                 if fixup:
                     residuals.append(FixupBlock(d0, d1, L=L))
                 else:
-                    residuals.append(ResidualBlock(d0, d1, celu_alpha, batch_norm))
+                    residuals.append(ResidualBlock(d0, d1, celu_alpha, batch_norm, silu=silu, gelu=gelu))
         if collapse_to is not None:
             residuals.append(torch.nn.Linear(dims[-1], collapse_to))
         return torch.nn.Sequential(*residuals)
@@ -350,9 +365,9 @@ class AtomicNetworkPlusScalar(AtomicNetworkResidualV2):
             num_outputs=1,
             num_other_outputs=1,
             batch_norm=False,
-            fixup=False):
+            fixup=False, silu=False, gelu=False):
         super().__init__(dim_in, dims_shared, dims_specific, celu_alpha, num_outputs, batch_norm, fixup)
-        self.residuals_magnitudes = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_other_outputs, fixup=fixup, L=self.L)
+        self.residuals_magnitudes = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_other_outputs, fixup=fixup, L=self.L, silu=silu, gelu=gelu)
 
     def forward(self, x):
         # first go through shared modules

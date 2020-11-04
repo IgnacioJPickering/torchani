@@ -285,6 +285,10 @@ class Trainer:
             if metrics is not None:
                 for k, v in metrics.items():
                     self.tensorboard.add_scalar(f'{k}', v, epoch_number)
+            if list(self.loss_function.parameters()):
+                for parameter_vector in self.loss_function.parameters():
+                    for k, p in enumerate(parameter_vector):
+                        self.tensorboard.add_scalar(f'loss_parameter_{k}', epoch_time, epoch_number)
             if epoch_time is not None:
                 self.tensorboard.add_scalar('epoch_time', epoch_time, epoch_number)
             if loss is not None:

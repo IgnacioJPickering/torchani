@@ -9,7 +9,7 @@ class ResidualBlock(torch.nn.Module):
     # is equal to None or is some dimension, if it is equal to None it is taken to 
     # be the same as dim_in
     # can implement batch normalization after activations if wanted
-    def __init__(self, dim_in, dim_out=None, celu_alpha=0.1, batch_norm=False, batch_norm_momentum=0.1, batch_norm_eps=1e-5):
+    def __init__(self, dim_in, dim_out=None, celu_alpha=0.1, batch_norm=False, batch_norm_momentum=0.1, batch_norm_eps=1e-5, silu=False, gelu=False):
         super().__init__()
 
         if dim_out is None:
@@ -21,6 +21,10 @@ class ResidualBlock(torch.nn.Module):
 
         self.linear1 = torch.nn.Linear(dim_in, dim_in)
         self.linear2 = torch.nn.Linear(dim_in, dim_out)
+        if silu:
+            self.activation = torch.nn.SiLU()
+        elif gelu:
+            self.activation = torch.nn.GELU()
         self.activation = torch.nn.CELU(alpha=celu_alpha)
 
         if batch_norm:
