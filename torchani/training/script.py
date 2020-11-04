@@ -148,7 +148,7 @@ class Trainer:
         else:
             return loss, losses
 
-    def train(self, datasets, use_tqdm=False, max_epochs=maxsize, early_stopping_lr=0.0, loop='ground_state_loop', log_every_batch=False, foscs_only=False, sqdipoles_only=False):
+    def train(self, datasets, use_tqdm=False, max_epochs=maxsize, early_stopping_lr=0.0, loop='ground_state_loop', log_every_batch=False, foscs_only=False, sqdipoles_only=False, limited_memory=False):
         self.foscs_only = foscs_only
         self.sqdipoles_only = sqdipoles_only
         self.log_every_batch = log_every_batch
@@ -157,8 +157,12 @@ class Trainer:
             if self.verbose: print(f'Model fully trained, with {max_epochs} epochs')
             exit(0)
 
-        training = datasets.training
+        training = datasets.training 
+        # note that training is an actual training set if limited_memory is False
+        # and a path for batches if it is True
         validation = datasets.validation
+        if limited_memory:
+            training = [d for d in training.iterdir() if 'batch' in d.stem]
 
         # at the beginning the epoch is the 0th epoch, epoch 0 means not doing nothing
         # afterwards rmse and logging is done after an epoch finishes
@@ -178,11 +182,14 @@ class Trainer:
 
         for _ in range(self.lr_scheduler.last_epoch, max_epochs):
             start = time.time()
+
             
-            # shuffling batches
+            # shuffling batches, for limited memory this shuffles the directories
+            # of the pickled files
             random.shuffle(training) 
             
             # Setup tqdm if necessary
+
             if use_tqdm: 
                 conformations = tqdm(enumerate(training), total=total_batches, desc=f'epoch {self.lr_scheduler.last_epoch}')
             else:
@@ -194,7 +201,12 @@ class Trainer:
 
             for i, conformation in conformations:
                 batch_number = i + self.lr_scheduler.last_epoch * total_batches
-                loss, other_losses = training_loop(batch_number, conformation)
+                if limited_memory:
+                    with open(conformation, 'rb') as f:
+                        conformation_ = pickle.load(f)
+                else:
+                    conformation_ = conformation
+                loss, other_losses = training_loop(batch_number, conformation_)
         
             # Validate (every epoch)
             main_metric, metrics = self.validate(self.model, validation)
@@ -393,51 +405,93 @@ def dump_yaml_input(output_paths, yaml_name, original_config):
 def load_datasets(ds_config, output_paths, dataset_path_raw, model, global_config=None):
     Datasets = namedtuple('Datasets', 'training validation test')
     # fetch dataset path from input arguments or from configuration file 
-    if output_paths.dataset_pkl.is_file():
-        print('Unpickling training and validation files located inside output directory')
-        with open(output_paths.dataset_pkl, 'rb') as f:
-            pickled_dataset = pickle.load(f)
-            training = pickled_dataset['training']
-            validation = pickled_dataset['validation']
-    else:
-        # case when pickled files don't exist in the output path
-        if args.dataset_path is not None:
-            data_path = Path(args.dataset_path).resolve()
+    if global_config:
+        limited_memory = global_config['limited_memory']
+    if limited_memory:
+        if global_config is None:
+            data_path = Path(ds_config['dataset_path']).resolve()
         else:
-            if global_config is None:
-                data_path = Path(ds_config['dataset_path']).resolve()
-            else:
-                data_path = Path(global_config['datasets']).resolve().joinpath(ds_config['dataset_path'])
-        assert data_path.is_file() or data_path.is_dir()
+            data_path = Path(global_config['datasets']).resolve().joinpath(ds_config['dataset_path'])
+        assert data_path.is_dir()
+        # in this case data_path contains validation.pkl and a bunch of 
+        # pkl files with the batches, or a directory with the h5 file/s inside, which will be converted
+        # into a directory with validation.pkl and batch files, together with the h5 files/s
+        if data_path.joinpath('validation.pkl').is_file():
+            with open(data_path.joinpath('validation.pkl'), 'rb') as f:
+                validation = pickle.load(f)
+            training = data_path
+        else:
+           print('Creating pickled batch files, warning, this WILL potentially use a lot of memory', flush=True)
+           print('Loading training and validation from directory of h5 files')
+           data.PROPERTIES = tuple(v for k, v in ds_config['nonstandard_keys'].items() if k not in ['species', 'coordinates'])
+           # also subtract self energies for ex energies if they are present
+           # this may need to be modified in the future
+           ex_key = 'energies_ex' if 'energies_ex' in data.PROPERTIES else None
+           training, validation = data.load(data_path.as_posix(), nonstandard_keys=ds_config['nonstandard_keys'])\
+                           .subtract_self_energies(model.energy_shifter, model.species_order(), ex_key=ex_key)\
+                           .species_to_indices('periodic_table')\
+                           .shuffle().split(ds_config['split_percentage'], None)
 
-        if data_path.suffix == '.h5' or data_path.is_dir():
-            print('Loading training and validation from h5 file or directory of h5 files')
-            data.PROPERTIES = tuple(v for k, v in ds_config['nonstandard_keys'].items() if k not in ['species', 'coordinates'])
-            # also subtract self energies for ex energies if they are present
-            # this may need to be modified in the future
-            ex_key = 'energies_ex' if 'energies_ex' in data.PROPERTIES else None
-            training, validation = data.load(data_path.as_posix(), nonstandard_keys=ds_config['nonstandard_keys'])\
-                            .subtract_self_energies(model.energy_shifter, model.species_order(), ex_key=ex_key)\
-                            .species_to_indices('periodic_table')\
-                            .shuffle().split(ds_config['split_percentage'], None)
+           print('Self energies: ')
+           print(model.energy_shifter.self_energies)
 
-            print('Self energies: ')
-            print(model.energy_shifter.self_energies)
-
-            training = training.collate(ds_config['batch_size']).cache()
-            validation = validation.collate(ds_config['batch_size']).cache()
-            with open(output_paths.dataset_pkl, 'wb') as f:
-                pickled_dataset = {'training': training, 'validation':validation}
-                pickle.dump(pickled_dataset, f)
-            print('\n')
-        elif data_path.suffix == '.pkl':
-            print('Unpickling external training and validation files')
-            with open(data_path, 'rb') as f:
+           training = list(training.collate(ds_config['batch_size']))
+           validation = list(validation.collate(ds_config['batch_size']))
+           with open(data_path.joinpath('validation.pkl'), 'wb') as f:
+               pickle.dump(validation, f, pickle.HIGHEST_PROTOCOL)
+           for j, b in enumerate(training):
+               with open(data_path.joinpath(f'batch_{j}.pkl'), 'wb') as f:
+                   pickle.dump(b, f, pickle.HIGHEST_PROTOCOL)
+           print('\n')
+           training = data_path
+    else:
+        if output_paths.dataset_pkl.is_file():
+            # limited memory disallows loading pickle files
+            print('Unpickling training and validation files located inside output directory')
+            with open(output_paths.dataset_pkl, 'rb') as f:
                 pickled_dataset = pickle.load(f)
                 training = pickled_dataset['training']
                 validation = pickled_dataset['validation']
-    training = training.pin_memory()
-    validation = validation.pin_memory()
+        else:
+            # case when pickled files don't exist in the output path
+            if args.dataset_path is not None:
+                data_path = Path(args.dataset_path).resolve()
+            else:
+                if global_config is None:
+                    data_path = Path(ds_config['dataset_path']).resolve()
+                else:
+                    data_path = Path(global_config['datasets']).resolve().joinpath(ds_config['dataset_path'])
+            assert data_path.is_file() or data_path.is_dir()
+
+            if data_path.suffix == '.h5' or data_path.is_dir():
+                print('Loading training and validation from h5 file or directory of h5 files')
+                data.PROPERTIES = tuple(v for k, v in ds_config['nonstandard_keys'].items() if k not in ['species', 'coordinates'])
+                # also subtract self energies for ex energies if they are present
+                # this may need to be modified in the future
+                ex_key = 'energies_ex' if 'energies_ex' in data.PROPERTIES else None
+                training, validation = data.load(data_path.as_posix(), nonstandard_keys=ds_config['nonstandard_keys'])\
+                                .subtract_self_energies(model.energy_shifter, model.species_order(), ex_key=ex_key)\
+                                .species_to_indices('periodic_table')\
+                                .shuffle().split(ds_config['split_percentage'], None)
+
+                print('Self energies: ')
+                print(model.energy_shifter.self_energies)
+
+                training = training.collate(ds_config['batch_size']).cache()
+                validation = validation.collate(ds_config['batch_size']).cache()
+                with open(output_paths.dataset_pkl, 'wb') as f:
+                    pickled_dataset = {'training': training, 'validation':validation}
+                    pickle.dump(pickled_dataset, f)
+                print('\n')
+            elif data_path.suffix == '.pkl':
+                print('Unpickling external training and validation files')
+                with open(data_path, 'rb') as f:
+                    pickled_dataset = pickle.load(f)
+                    training = pickled_dataset['training']
+                    validation = pickled_dataset['validation']
+    if not limited_memory:
+        training = training.pin_memory()
+        validation = validation.pin_memory()
 
     datasets = Datasets(training=training, validation=validation, test=None)
     return datasets
@@ -554,4 +608,4 @@ if __name__ == '__main__':
     trainer = Trainer(model, optimizer, lr_scheduler, loss_function, validation_function, output_paths, hparams, other_scheduler=other_scheduler)
     trainer.train(datasets, **config['general'],
             use_tqdm=global_config['use_tqdm'],
-            log_every_batch=global_config['log_every_batch'])
+            log_every_batch=global_config['log_every_batch'], limited_memory=global_config['limited_memory'])

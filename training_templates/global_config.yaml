@@ -1,3 +1,4 @@
 datasets: '/home/ignacio/Datasets/'
 log_every_batch: False
 use_tqdm: False
+limited_memory: True
