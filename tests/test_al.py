@@ -40,10 +40,11 @@ class TestALAtomic(unittest.TestCase):
         self.assertTrue(energies.shape[0] == len(self.model.neural_networks))
         # energies of all hydrogens should be equal
         self.assertTrue(
-            energies[0, 0, 0],
-            torch.tensor(-0.54562734428531045605,
-                         device=self.device,
-                         dtype=torch.double))
+            torch.isclose(
+                energies[0, 0, 0],
+                torch.tensor(-0.54562734428531045605,
+                             device=self.device,
+                             dtype=torch.double)))
         for e in energies:
             self.assertTrue((e[:, :-1] == e[:, 0]).all())
 
@@ -61,8 +62,12 @@ class TestALQBC(TestALAtomic):
         self.assertTrue(
             energies[0] == self.first_model((self.species,
                                              self.coordinates)).energies)
-        self.assertTrue(energies[0] == torch.tensor(
-            -40.277153758433975, dtype=torch.double, device=self.device))
+        self.assertTrue(
+            torch.isclose(
+                energies[0],
+                torch.tensor(-40.277153758433975,
+                             dtype=torch.double,
+                             device=self.device)))
 
     def testQBC(self):
         # fully symmetric methane
