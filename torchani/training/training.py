@@ -1,7 +1,9 @@
 import torch
 import math
+import numpy as np
+import pickle
+from tqdm import tqdm
 from torchani.units import hartree2kcalmol, hartree2ev
-
 
 def validate_energies(model, validation):
     model.eval()
@@ -16,7 +18,6 @@ def validate_energies(model, validation):
             species = conformation['species'].to(device)
             coordinates = conformation['coordinates'].to(device).float()
             true_energies = conformation['energies'].to(device).float()
-
             _, predicted_energies = model((species, coordinates))
             total_mse += mse_sum(predicted_energies, true_energies).item()
             count += predicted_energies.shape[0]
@@ -24,6 +25,90 @@ def validate_energies(model, validation):
     metrics = None
     model.train()
     return main_metric, metrics
+
+def save_histogram_energies(model, validation, ex = None):
+    assert isinstance(ex, (int, None))
+    model.eval()
+    # get device from an arbitrary model tensor
+    device = model.aev_computer.ShfR.device
+    # run energy validation on a given dataset
+    with torch.no_grad():
+        errors = []
+        atoms = []
+        true_energies_list = []
+        predicted_energies_list = []
+        for conformation in tqdm(validation):
+            species = conformation['species'].to(device)
+            coordinates = conformation['coordinates'].to(device).float()
+            true_energies = conformation['energies'].to(device).float()
+            if ex is not None:
+                true_energies_ex = conformation['energies_ex'].to(device).float()
+            num_atoms = (species >= 0).sum(dim=1, dtype=true_energies.dtype)
+            _, predicted_energies, _ = model((species, coordinates))
+
+            true_energies = hartree2ev(true_energies_ex)[:, ex - 1]
+            predicted_energies = hartree2ev(predicted_energies[:, 1:])[:, ex - 1]
+
+            errors.append(torch.abs(predicted_energies - true_energies).cpu().numpy())
+            atoms.append(num_atoms.cpu().numpy())
+            true_energies_list.append(true_energies.cpu().numpy())
+            predicted_energies_list.append(predicted_energies.cpu().numpy())
+
+        errors = np.concatenate(errors)
+        atoms = np.concatenate(atoms)
+        true_energies_list = np.concatenate(true_energies_list)
+        predicted_energies_list = np.concatenate(predicted_energies_list)
+    if ex is not None:
+        suffix = f'_ex{ex}'
+    else:
+        suffix = ''
+    with open(f'true_energies{suffix}.pkl', 'wb') as f:
+        pickle.dump(true_energies_list, f)
+    with open(f'predicted_energies{suffix}.pkl', 'wb') as f:
+        pickle.dump(predicted_energies_list, f)
+    with open(f'errors_energies{suffix}.pkl', 'wb') as f:
+        pickle.dump(errors, f)
+    with open(f'atoms{suffix}.pkl', 'wb') as f:
+        pickle.dump(atoms, f)
+    model.train()
+
+def save_histogram_foscs(model, validation, ex=1):
+    assert isinstance(ex, (int))
+    model.eval()
+    # get device from an arbitrary model tensor
+    device = model.aev_computer.ShfR.device
+    # run energy validation on a given dataset
+    with torch.no_grad():
+        errors = []
+        atoms = []
+        true_foscs_list = []
+        predicted_foscs_list = []
+        for conformation in tqdm(validation):
+            species = conformation['species'].to(device)
+            coordinates = conformation['coordinates'].to(device).float()
+            true_foscs = conformation['foscs_ex'].to(device).float()[:, ex-1]
+            predicted_foscs = model((species, coordinates))[-1][:, ex-1]
+            num_atoms = (species >= 0).sum(dim=1, dtype=true_foscs.dtype)
+            errors.append(torch.abs(predicted_foscs - true_foscs).cpu().numpy())
+            atoms.append(num_atoms.cpu().numpy())
+            true_foscs_list.append(true_foscs.cpu().numpy())
+            predicted_foscs_list.append(predicted_foscs.cpu().numpy())
+
+        errors = np.concatenate(errors)
+        atoms = np.concatenate(atoms)
+        true_foscs_list = np.concatenate(true_foscs_list)
+        predicted_foscs_list = np.concatenate(predicted_foscs_list)
+
+    suffix = f'_ex{ex}'
+    with open(f'true_foscs{suffix}.pkl', 'wb') as f:
+        pickle.dump(true_foscs_list, f)
+    with open(f'predicted_foscs{suffix}.pkl', 'wb') as f:
+        pickle.dump(predicted_foscs_list, f)
+    with open(f'errors_foscs{suffix}.pkl', 'wb') as f:
+        pickle.dump(errors, f)
+    with open(f'atoms{suffix}.pkl', 'wb') as f:
+        pickle.dump(atoms, f)
+    model.train()
 
 def validate_energies_ex(model, validation):
     model.eval()
@@ -86,280 +171,6 @@ def validate_energies_ex_and_foscs(model, validation):
     metrics.update({ f'state_{j+1}/rmse_foscs_au': v for j, v in enumerate(rmses_au[num_outputs:])})
     model.train()
     return main_metric, metrics
-
-class RootAtomsLoss(torch.nn.Module):
-
-    def __init__(self):
-        super().__init__()
-        self.mse =  torch.nn.MSELoss(reduction='none')
-
-    def forward(self, predicted, target, species):
-        num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
-        return (self.mse(predicted, target) / num_atoms.sqrt()).mean()
-
-class BareLoss(torch.nn.Module):
-
-    def __init__(self):
-        super().__init__()
-        self.mse =  torch.nn.MSELoss(reduction='none')
-
-    def forward(self, predicted, target, species):
-        return (self.mse(predicted, target)).mean()
-
-class MultiTaskLoss(torch.nn.Module):
-    # this function can be used even if the input has multiple
-    # values, in that case it just adds up the values, multiplies 
-    # them by weights (or performs an average) and outputs both the individual
-    # values and the sum as a loss
-
-    def __init__(self, weights=None, num_inputs=10):
-        super().__init__()
-        self.mse =  torch.nn.MSELoss(reduction='none')
-        if weights is not None:
-            self.register_buffer('weights', torch.tensor(weights,
-                dtype=torch.double))
-        else:
-            self.register_buffer('weights', torch.ones(num_inputs,
-                dtype=torch.double) * 1 / num_inputs)
-
-    def forward(self, predicted, target, species):
-        num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
-        squares = self.mse(predicted, target)
-        losses = (squares / num_atoms.sqrt().reshape(-1, 1)).mean(dim=0)
-        loss = (losses * self.weights).sum()
-        return  loss, losses.detach()
-
-class MultiTaskRelativeLoss(torch.nn.Module):
-    # this function can be used even if the input has multiple
-    # values, in that case it just adds up the values, multiplies 
-    # them by weights (or performs an average) and outputs both the individual
-    # values and the sum as a loss
-
-    def __init__(self, weights=None, num_inputs=10):
-        super().__init__()
-        self.mse =  torch.nn.MSELoss(reduction='none')
-        if weights is not None:
-            self.register_buffer('weights', torch.tensor(weights,
-                dtype=torch.double))
-        else:
-            self.register_buffer('weights', torch.ones(num_inputs,
-                dtype=torch.double) * 1 / num_inputs)
-
-    def forward(self, predicted, target, species):
-        square_ground = self.mse(predicted[:, 0], target[:, 0])
-        ratios_ex = predicted[:, 1:]/target[:, 1:]
-        squares_ex = self.mse(ratios_ex, torch.ones_like(ratios_ex))
-        squares = torch.cat((square_ground.unsqueeze(-1), squares_ex), dim=-1)
-        losses = (squares).mean(dim=0)
-        loss = (losses * self.weights).sum()
-        return  loss, losses.detach()
-
-class MultiTaskSpectraLoss(torch.nn.Module):
-    # this function can be used even if the input has multiple
-    # values, in that case it just adds up the values, multiplies 
-    # them by weights (or performs an average) and outputs both the individual
-    # values and the sum as a loss
-
-    def __init__(self, weights=None, num_inputs=11, num_other_inputs=10, dipoles=False):
-        super().__init__()
-        self.mse =  torch.nn.MSELoss(reduction='none')
-        if weights is not None:
-            self.register_buffer('weights', torch.tensor(weights,
-                dtype=torch.double))
-        else:
-            if dipoles:
-                # I will rescale the dipoles manually with weights if needed
-                self.register_buffer('weights', torch.ones(num_inputs + 3 * num_other_inputs,
-                    dtype=torch.double) * 1 / (num_inputs + 3 * num_other_inputs))
-            else:
-                self.register_buffer('weights', torch.ones(num_inputs + num_other_inputs,
-                    dtype=torch.double) * 1 / (num_inputs + num_other_inputs))
-
-        self.num_other_inputs = num_other_inputs
-        self.dipoles = dipoles
-
-    def forward(self, predicted, target,  target_other, predicted_other, species):
-
-        target = torch.cat((target, target_other), dim=-1)
-        predicted = torch.cat((predicted, predicted_other), dim=-1)
-        losses = (self.mse(predicted, target)).mean(dim=0)
-        loss = (losses * self.weights).sum()
-        return  loss, losses.detach()
-
-class MultiTaskBareLoss(torch.nn.Module):
-    # this function can be used even if the input has multiple
-    # values, in that case it just adds up the values, multiplies 
-    # them by weights (or performs an average) and outputs both the individual
-    # values and the sum as a loss
-
-    def __init__(self, weights=None, num_inputs=11):
-        super().__init__()
-        self.mse =  torch.nn.MSELoss(reduction='none')
-        if weights is not None:
-            self.register_buffer('weights', torch.tensor(weights,
-                dtype=torch.double))
-        else:
-            self.register_buffer('weights', torch.ones(num_inputs,
-                dtype=torch.double) * 1 / num_inputs)
-
-    def forward(self, predicted, target, species):
-        losses = self.mse(predicted, target).mean(dim=0)
-        loss = (losses * self.weights).sum()
-        return  loss, losses.detach()
-
-class MultiTaskPairwiseLoss(torch.nn.Module):
-    # this function can be used even if the input has multiple
-    # values, in that case it just adds up the values, multiplies 
-    # them by weights (or performs an average) and outputs both the individual
-    # values and the sum as a loss
-
-    def __init__(self, weights=None, num_inputs=11):
-        super().__init__()
-        self.mse =  torch.nn.MSELoss(reduction='none')
-        if weights is not None:
-            self.register_buffer('weights', torch.tensor(weights,
-                dtype=torch.double))
-        else:
-            pairs = num_inputs * (num_inputs - 1) // 2
-            self.register_buffer('weights', torch.ones(pairs,
-                dtype=torch.double) * 1 / pairs)
-
-        row_major = torch.arange(0, num_inputs* num_inputs).reshape(num_inputs, num_inputs)
-        idxs = torch.triu(row_major, diagonal=1)
-        idxs = torch.masked_select(idxs, idxs != 0)
-        self.register_buffer('idxs', idxs)
-
-    def forward(self, predicted, target, species):
-        num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
-
-        # get absolute energies
-        predicted[1:] = predicted[1:] + predicted[0]
-        target[1:] = target[1:] + target[0]
-
-        # get all pairwise differences
-        diff = target.unsqueeze(2) - target.unsqueeze(1)
-        diff_predicted = predicted.unsqueeze(2) - predicted.unsqueeze(1)
-
-        diff_target = diff.flatten(start_dim=1)[:, self.idxs]
-        diff_predicted = diff_predicted.flatten(start_dim=1)[:, self.idxs]
-
-        squares = self.mse(diff_predicted, diff_target)
-        losses = (squares / num_atoms.sqrt().reshape(-1, 1)).mean(dim=0)
-        loss = (losses * self.weights).sum()
-        # I don't need one million losses so I don't even output them
-        return  loss, None
-
-
-class MTLLoss(torch.nn.Module):
-    """A class to calculate the MTL loss with homoscedastic uncertainty
-    https://arxiv.org/abs/1705.07115
-    Args:
-        losses: a list of task specific loss terms
-        num_tasks: number of tasks
-    """
-    def __init__(self, num_tasks=11):
-        super(MTLLoss, self).__init__()
-        self.num_tasks = num_tasks
-        self.log_sigma = torch.nn.Parameter(torch.zeros((num_tasks)))
-    def get_precisions(self):
-        return 0.5 * torch.exp(- self.log_sigma) ** 2
-
-    def forward(self, *loss_terms):
-        assert len(loss_terms) == self.num_tasks
-        total_loss = 0
-        self.precisions = self.get_precisions()
-        for task in range(self.num_tasks):
-            total_loss += self.precisions[task] * loss_terms[task] + self.log_sigma[task]
-        return total_loss
-
-class MtlSpectraLoss(torch.nn.Module):
-    # this function can be used even if the input has multiple
-    # values, in that case it just adds up the values, multiplies 
-    # them by weights (or performs an average) and outputs both the individual
-    # values and the sum as a loss
-
-    def __init__(self, weights=None, num_inputs=11, num_other_inputs=10, dipoles=False):
-        super().__init__()
-        self.mse =  torch.nn.MSELoss(reduction='none')
-
-        self.num_other_inputs = num_other_inputs
-        self.dipoles = dipoles
-        self.num_tasks = num_inputs + num_other_inputs
-
-        self.log_sigma = torch.nn.Parameter(torch.zeros((num_inputs + num_other_inputs)))
-
-    def get_precisions(self):
-        return 0.5 * torch.exp(- self.log_sigma) ** 2
-
-    def forward(self, predicted, target,  target_other, predicted_other, species):
-
-        target = torch.cat((target, target_other), dim=-1)
-        predicted = torch.cat((predicted, predicted_other), dim=-1)
-        assert len(target[1]) == self.num_tasks
-        self.precisions = self.get_precisions()
-
-        losses = (self.mse(predicted, target)).mean(dim=0)
-        loss = (losses * self.precisions).sum() + self.log_sigma.sum()
-        return  loss, losses.detach()
-
-class MtlThreeSpectraLoss(torch.nn.Module):
-    # this function can be used even if the input has multiple
-    # values, in that case it just adds up the values, multiplies 
-    # them by weights (or performs an average) and outputs both the individual
-    # values and the sum as a loss
-
-    def __init__(self, weights=None, num_inputs=11, num_other_inputs=10, dipoles=False):
-        super().__init__()
-        self.mse =  torch.nn.MSELoss(reduction='none')
-
-        self.num_other_inputs = num_other_inputs
-        self.dipoles = dipoles
-        self.num_inputs = num_inputs
-        self.num_tasks = num_inputs + num_other_inputs
-        self.log_sigma = torch.nn.Parameter(torch.zeros(3))
-
-    def get_precisions(self):
-        return 0.5 * torch.exp(- self.log_sigma) ** 2
-
-    def forward(self, predicted, target,  target_other, predicted_other, species):
-
-        target = torch.cat((target, target_other), dim=-1)
-        predicted = torch.cat((predicted, predicted_other), dim=-1)
-        self.precisions = self.get_precisions()
-
-        losses = (self.mse(predicted, target)).mean(dim=0)
-        loss = 0.0
-        loss += losses[0] * self.precisions[0]
-        loss += (losses[1:self.num_inputs] * self.precisions[1]).sum()
-        loss += (losses[self.num_inputs:self.num_tasks] * self.precisions[2]).sum()
-        loss += self.log_sigma.sum()
-
-        return  loss, losses.detach()
-
-
-
-
-
-class MultiTaskUncertaintyLoss(torch.nn.Module):
-
-    def __init__(self, num_inputs=10, weight_sqrt_atoms=True):
-        super().__init__()
-        self.mse =  torch.nn.MSELoss(reduction='none')
-        self.weight_sqrt_atoms = weight_sqrt_atoms
-        # predict log_sigmas_squared since it is more numerically stable
-        # this is equivalent to initializing sigmas as ones
-        self.register_parameter('log_sigmas_squared', torch.nn.Parameter(torch.zeros(num_inputs, dtype=torch.double)))
-
-    def forward(self, predicted, target, species):
-        squares = self.mse(predicted, target) 
-        if self.weight_sqrt_atoms:
-            num_atoms = (species >= 0).sum(dim=1, dtype=target.dtype)
-            losses = (squares / num_atoms.sqrt().reshape(-1, 1)).mean(dim=0)
-        else:
-            losses = (squares).mean(dim=0)
-        loss = (0.5 * torch.exp(-self.log_sigmas_squared) * losses).sum() 
-        loss = loss + 0.5 * self.log_sigmas_squared.sum()
-        return  loss, losses.detach()
 
 def init_traditional(m):
     if isinstance(m, torch.nn.Linear):
