@@ -6,3 +6,4 @@ from .shifter import *
 from .template_models import *
 from .attention_atomic import *
 from .aev_computer_joint import *
+from .aev_computer_neighborlist import *
