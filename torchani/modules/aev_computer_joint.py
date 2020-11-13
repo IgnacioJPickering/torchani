@@ -128,10 +128,16 @@ class AEVComputerJoint(torch.nn.Module):
         inv_distances = reciprocal_cell.norm(2, -1)
         num_repeats = torch.ceil(cutoff * inv_distances).to(torch.long)
         num_repeats = torch.where(pbc, num_repeats, num_repeats.new_zeros(()))
+        # num repeats is 1, 1, 1 for logical values of small cutoffs, smaller
+        # than the unit cell size
+        # r1, r2, r3 are the three [1], and o is [0]
         r1 = torch.arange(1, num_repeats[0] + 1, device=cell.device)
         r2 = torch.arange(1, num_repeats[1] + 1, device=cell.device)
         r3 = torch.arange(1, num_repeats[2] + 1, device=cell.device)
         o = torch.zeros(1, dtype=torch.long, device=cell.device)
+        # the cartesian prod is just [1, 1, 1], [1, 1, 0], etc
+        # and the catted output is [[1, 1, 1], [1, 1, 0], ... etc]
+        # so it is a tensor of shape 13 x 3
         return torch.cat([
             torch.cartesian_prod(r1, r2, r3),
             torch.cartesian_prod(r1, r2, o),
@@ -267,14 +273,14 @@ class AEVComputerJoint(torch.nn.Module):
             cutoff (float): the cutoff inside which atoms are considered pairs
             shifts (:class:`torch.Tensor`): tensor of shape (?, 3) storing shifts
         """
+        # shifts consists of a tensor of shape 13 x 3
+        # that has [[1, 1, 1], [1, 1, 0], ... etc]
         coordinates = coordinates.detach()
         cell = cell.detach()
-        num_atoms = padding_mask.shape[1]
-        num_mols = padding_mask.shape[0]
-        all_atoms = torch.arange(num_atoms, device=cell.device)
     
         # Step 2: center cell
         # torch.triu_indices is faster than combinations
+        num_atoms = padding_mask.shape[1]
         p12_center = torch.triu_indices(num_atoms, num_atoms, 1, device=cell.device)
         shifts_center = shifts.new_zeros((p12_center.shape[1], 3))
     
@@ -282,6 +288,7 @@ class AEVComputerJoint(torch.nn.Module):
         # shape convention (shift index, molecule index, atom index, 3)
         num_shifts = shifts.shape[0]
         all_shifts = torch.arange(num_shifts, device=cell.device)
+        all_atoms = torch.arange(num_atoms, device=cell.device)
         prod = torch.cartesian_prod(all_shifts, all_atoms, all_atoms).t()
         shift_index = prod[0]
         p12 = prod[1:]
@@ -293,6 +300,7 @@ class AEVComputerJoint(torch.nn.Module):
         shift_values = shifts_all.to(cell.dtype) @ cell
     
         # step 5, compute distances, and find all pairs within cutoff
+        num_mols = padding_mask.shape[0]
         selected_coordinates = coordinates.index_select(1, p12_all.view(-1)).view(num_mols, 2, -1, 3)
         distances = (selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...] + shift_values).norm(2, -1)
         padding_mask = padding_mask.index_select(1, p12_all.view(-1)).view(2, -1).any(0)

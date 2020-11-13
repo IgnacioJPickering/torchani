@@ -7,6 +7,7 @@ from torch import Tensor
 
 from .aev_computer_joint import AEVComputerJoint
 
+
 def stable_argsort(input_: Tensor):
     # argsort is NOT stable, it doesn't preserve order of equal elements
     # this means that it is not possible to use argsort again to recover a 
@@ -51,7 +52,7 @@ def cumsum_from_zero(input_: Tensor) -> Tensor:
 
 class CellListComputer(torch.nn.Module):
 
-    def __init__(self, cutoff, buckets_per_cutoff=1):
+    def __init__(self, cutoff, buckets_per_cutoff=1, debug=False):
         super().__init__()
         self.cell_diagonal = None
         self.scaling_for_flat_index = None
@@ -67,7 +68,19 @@ class CellListComputer(torch.nn.Module):
         # I choose all the displacements except for the zero
         # displacement that does nothing, which is the last one
         self.vector_index_displacement = torch.cartesian_prod(
-                               index_disp_1d, index_disp_1d, index_disp_1d)[:-1]
+                                index_disp_1d, index_disp_1d, index_disp_1d)[:-1]
+        if not debug:
+            # right now I will only support this, and the extra neighbors are
+            # hardcoded full support for arbitrary buckets per cutoff is
+            # possible with something similar to xiang's code
+            assert buckets_per_cutoff == 1
+            extra_neighbors = torch.tensor([[-1, 1, 0], 
+                                            [1, 1, -1], [1, 0, -1] , [1, -1, -1], 
+                                            [0, 1, -1], [-1, 1, -1]])
+            # append extra displacements
+            self.vector_index_displacement = torch.cat((self.vector_index_displacement, extra_neighbors), dim=0)
+            assert self.vector_index_displacement.shape == torch.Size([13, 3])
+
         # This is 26 for 2 buckets and 17 for 1 bucket 
         # This is necessary for the image - atom map and atom - image map
         self.num_neighbors = len(self.vector_index_displacement)
@@ -121,7 +134,15 @@ class CellListComputer(torch.nn.Module):
                                                 self.shape_buckets_grid[1],
                                                 self.shape_buckets_grid[2])
 
+        self.vector_idx_to_flat = self._pad_circular(self.vector_idx_to_flat)
+
         return self.shape_buckets_grid, self.total_buckets
+
+    @staticmethod
+    def _pad_circular(x):
+        x = x.unsqueeze(0).unsqueeze(0)
+        x = functional.pad(x, (1,1, 1, 1, 1, 1), mode='circular')
+        return x.squeeze()
 
     def _get_bucket_length(self, extra_space: float =0.00001):
         # Get the size (Bx, By, Bz) of the buckets in the grid
@@ -179,8 +200,7 @@ class CellListComputer(torch.nn.Module):
         # bucket" and "neighboring buckets"
         assert self.shape_buckets_grid is not None,\
             "Max bucket index not computed"
-        out = torch.round(fractional * (self.shape_buckets_grid - 1))
-        out = out.reshape(1, 1, -1).to(torch.long)
+        out = torch.round(fractional * (self.shape_buckets_grid - 1).reshape(1, 1, -1)).to(torch.long)
         return out
 
     @staticmethod
@@ -203,21 +223,20 @@ class CellListComputer(torch.nn.Module):
         atidx_from_imidx = stable_argsort(imidx_from_atidx)
         return imidx_from_atidx, atidx_from_imidx
 
-    @staticmethod
-    def get_atoms_in_flat_bucket_counts(main_bucket_flat_index, total_buckets):
+    def get_atoms_in_flat_bucket_counts(self, atom_flat_index):
         # NOTE: check if bincount if fast. (bincount is only useful for 1D
         # inputs) count in flat bucket: 3 0 0 0 ... 2 0 0 0 ... 1 0 1 0 ...,
         # shape is total buckets F cumulative buckets count has the number of
         # atoms BEFORE a given bucket cumulative buckets count: 0 3 3 3 ... 3 5
         # 5 5 ... 5 6 6 7 ...
-        main_bucket_flat_index = main_bucket_flat_index.squeeze()
-        count_in_flat_bucket = torch.bincount(main_bucket_flat_index,
-                                              minlength=total_buckets) 
-        cumcount_in_flat_bucket = cumsum_from_zero(count_in_flat_bucket)
+        atom_flat_index = atom_flat_index.squeeze()
+        flat_bucket_count = torch.bincount(atom_flat_index,
+                                              minlength=self.total_buckets) 
+        flat_bucket_cumcount = cumsum_from_zero(flat_bucket_count)
 
         # this is A*
-        max_in_bucket = count_in_flat_bucket.max() 
-        return count_in_flat_bucket, cumcount_in_flat_bucket, max_in_bucket
+        max_in_bucket = flat_bucket_count.max() 
+        return flat_bucket_count, flat_bucket_cumcount, max_in_bucket
 
     @staticmethod
     def sort_along_row(x: Tensor, max_value, row_for_sorting=1) -> Tensor:
@@ -233,7 +252,7 @@ class CellListComputer(torch.nn.Module):
         x = x.index_select(1, stable_sort(aug).indices)
         return x
 
-    def get_within_image_pairs(self, flat_bucket_count, max_in_bucket, flat_bucket_cumcount):
+    def get_within_image_pairs(self, flat_bucket_count, flat_bucket_cumcount, max_in_bucket):
         # max_in_bucket = maximum number of atoms contained in any bucket
         current_device = flat_bucket_count.device
 
@@ -263,13 +282,13 @@ class CellListComputer(torch.nn.Module):
         within_image_pairs = torch.stack((upper, lower), dim=0)
         return within_image_pairs
 
-    def get_lower_between_image_pairs(self, neighbor_flat_bucket_count, neighbor_flat_bucket_cumcount, max_in_bucket):
+    def get_lower_between_image_pairs(self, neighbor_count, neighbor_cumcount, max_in_bucket):
         # 3) now I need the LOWER part
         # this gives, for each atom, for each neighbor bucket, all the
         # unpadded, unshifted atom neighbors
         # this is basically broadcasted to the shape of fna
         # shape is 1 x A x eta x A*
-        atoms = neighbor_flat_bucket_count.shape[1]
+        atoms = neighbor_count.shape[1]
         padded_atom_neighbors = torch.arange(0, max_in_bucket)
         padded_atom_neighbors = padded_atom_neighbors.reshape(1, 1, 1, -1)
         padded_atom_neighbors = padded_atom_neighbors.repeat(1, atoms, self.num_neighbors, 1)
@@ -279,13 +298,39 @@ class CellListComputer(torch.nn.Module):
         # it was technically done with imidx so I need to check correctnes of
         # both counting schemes, but first I create the mask to unpad
         # and then I shift to the correct indices
-        mask = (padded_atom_neighbors < neighbor_flat_bucket_count.unsqueeze(-1))
-        padded_atom_neighbors += neighbor_flat_bucket_cumcount.unsqueeze(-1)
+        mask = (padded_atom_neighbors < neighbor_count.unsqueeze(-1))
+        padded_atom_neighbors += neighbor_cumcount.unsqueeze(-1)
         # the mask should have the same shape as padded_atom_neighbors, and
         # now all that is left is to apply the mask in order to unpad
         assert padded_atom_neighbors.shape == mask.shape
         lower = torch.masked_select(padded_atom_neighbors, mask)
         return lower
+
+    def get_bucket_indices(self, fractional_coordinates):
+        atom_vector_index =\
+                self.fractional_to_vector_bucket_indices(fractional_coordinates)
+        atom_flat_index =\
+                self.to_flat_index(atom_vector_index)
+        return atom_vector_index, atom_flat_index
+
+    def get_neighbor_indices(self, atom_vector_index):
+        # This is actually pure neighbors, so it doesn't have 
+        # "the bucket itself" 
+        # These are 
+        # - g(a, n),  shape 1 x A x Eta x 3 
+        # - f(a, n),  shape 1 x A x Eta
+        # These give, for each atom, the flat index or the vector index of its
+        # neighbor buckets (neighbor buckets indexed by n).
+        neighbor_vector_indices = self.expand_into_neighbors(atom_vector_index) 
+        print(neighbor_vector_indices)
+
+        atoms = neighbor_vector_indices.shape[1]
+        neighbors = neighbor_vector_indices.shape[2]
+        neighbor_vector_indices += torch.ones(1, dtype=torch.long)
+        neighbor_vector_indices = neighbor_vector_indices.reshape(-1, 3).unbind(1)
+        neighbor_flat_indices = self.vector_idx_to_flat[neighbor_vector_indices]
+        neighbor_flat_indices = neighbor_flat_indices.reshape(1, atoms, neighbors)
+        return neighbor_vector_indices, neighbor_flat_indices
 
 
 class AEVComputerNL(AEVComputerJoint):
@@ -303,32 +348,9 @@ class AEVComputerNL(AEVComputerJoint):
         self.clist = CellListComputer(Rcr)
         self.constant_volume = constant_volume
 
-    def get_bucket_indices(self, fractional_coordinates):
-        main_bucket_vector_index =\
-                self.clist.fractional_to_vector_bucket_indices(fractional_coordinates)
-        main_bucket_flat_index =\
-                self.clist.to_flat_index(main_bucket_vector_index)
-        return main_bucket_vector_index, main_bucket_flat_index
-
-    def get_neighbor_bucket_indices(self, main_bucket_vector_index):
-        # This is actually pure neighbors, so it doesn't have 
-        # "the bucket itself" 
-        # These are 
-        # - g(a, n),  shape 1 x A x Eta x 3 
-        # - f(a, n),  shape 1 x A x Eta
-        # These give, for each atom, the flat index or the vector index of its
-        # neighbor buckets (neighbor buckets indexed by n).
-        neighbor_bucket_vector_indices = self.clist.expand_into_neighbors(main_bucket_vector_index) 
-
-        atoms = neighbor_bucket_vector_indices.shape[1]
-        neighbors = neighbor_bucket_vector_indices.shape[2]
-        neighbor_bucket_flat_indices = neighbor_bucket_vector_indices.reshape(-1, 3).unbind(1)
-        neighbor_bucket_flat_indices = self.clist.vector_idx_to_flat[neighbor_bucket_flat_indices]
-        neighbor_bucket_flat_indices = neighbor_bucket_flat_indices.reshape(1, atoms, neighbors)
-        return neighbor_bucket_vector_indices, neighbor_bucket_flat_indices
-    
     def neighbor_pairs(self, padding_mask: Tensor, coordinates: Tensor, cell: Tensor,
                        shifts: Tensor, cutoff: float) -> Tuple[Tensor, Tensor]:
+        # padding mask has to be unused for this, also shifts
         # 1) Setup cell parameters, only once for constant V simulations, 
         # every time for variable V, (constant P) simulations
         if self.constant_volume and self.clist.total_buckets is None:
@@ -344,14 +366,14 @@ class AEVComputerNL(AEVComputerJoint):
         # 3) Get vector indices and flattened indices for atoms in unit cell 
         # shape C x A x 3 this gives \vb{g}(a), the vector bucket idx
         # shape C x A this gives f(a), the flat bucket idx for atom a
-        main_bucket_vector_index, main_bucket_flat_index =\
-                                self.get_bucket_indices(fractional_coordinates)
+        atom_vector_index, atom_flat_index =\
+                                self.clist.get_bucket_indices(fractional_coordinates)
         
         # 4) get image_indices -> atom_indices and inverse mapping
         # NOTE: there is not necessarily a requirement to do this here
         # both shape A, a(i) and i(a)
         imidx_from_atidx, atidx_from_imidx = self.clist.get_imidx_converters(
-                                                        main_bucket_flat_index)
+                                                        atom_flat_index)
     
         # FIRST WE WANT "WITHIN" IMAGE PAIRS
         # 1) Get the number of atoms in each bucket (as indexed with f idx)
@@ -359,13 +381,12 @@ class AEVComputerNL(AEVComputerJoint):
         # flat bucket index, A being the number of atoms for that bucket, 
         # and Ac being the cumulative number of atoms up to that bucket
         flat_bucket_count, flat_bucket_cumcount, max_in_bucket =\
-        self.clist.get_atoms_in_flat_bucket_counts(main_bucket_flat_index,
-                total_buckets)
+            self.clist.get_atoms_in_flat_bucket_counts(atom_flat_index)
     
         # 2) this are indices WITHIN the central buckets
         within_image_pairs =\
-        self.clist.get_within_image_pairs(flat_bucket_count,
-                max_in_bucket, flat_bucket_cumcount)
+            self.clist.get_within_image_pairs(flat_bucket_count,
+                flat_bucket_cumcount, max_in_bucket)
 
         # NOW WE WANT "BETWEEN" IMAGE PAIRS
         # 1) Get the vector indices of all (pure) neighbors of each atom
@@ -375,12 +396,12 @@ class AEVComputerNL(AEVComputerJoint):
         # neighborhood count is A{n} (a), the number of atoms on the
         # neighborhood (all the neighbor buckets) of each atom,
         # A{n} (a) has shape 1 x A
-        neighbor_bucket_vector_indices, neighbor_bucket_flat_indices =\
-                self.get_neighbor_bucket_indices(main_bucket_vector_index)
+        neighbor_vector_indices, neighbor_flat_indices =\
+                self.clist.get_neighbor_indices(atom_vector_index)
         
-        neighbor_flat_bucket_count = flat_bucket_count[neighbor_bucket_flat_indices] 
-        neighbor_flat_bucket_cumcount = flat_bucket_cumcount[neighbor_bucket_flat_indices]
-        neighborhood_count = neighbor_flat_bucket_count.sum(-1).squeeze() 
+        neighbor_count = flat_bucket_count[neighbor_flat_indices] 
+        neighbor_cumcount = flat_bucket_cumcount[neighbor_flat_indices]
+        neighborhood_count = neighbor_count.sum(-1).squeeze() 
 
         # 2) Upper and lower part of the external pairlist
         # this is the correct "unpadded" upper part of the pairlist
@@ -388,10 +409,15 @@ class AEVComputerNL(AEVComputerJoint):
         # of atoms on the neighborhood of each atom
         upper = torch.repeat_interleave(imidx_from_atidx.squeeze(), neighborhood_count)
         lower =\
-            self.clist.get_lower_between_image_pairs(neighbor_flat_bucket_count,
-                                   neighbor_flat_bucket_cumcount, max_in_bucket)
+            self.clist.get_lower_between_image_pairs(neighbor_count,
+                                   neighbor_cumcount, max_in_bucket)
         assert lower.shape == upper.shape
         between_image_pairs = torch.stack((upper, lower), dim=0)
-        print(between_image_pairs)
-        print(within_image_pairs)
+
+        # stack within and between
+        image_pairs = torch.stack((between_image_pairs, within_image_pairs), dim=1)
+
+        atom_pairs = atidx_from_imidx[image_pairs]
+        print(atom_pairs)
+
         exit()
