@@ -52,7 +52,7 @@ class CellListComputer(torch.nn.Module):
 
     def __init__(self, cutoff, buckets_per_cutoff=1, debug=False):
         super().__init__()
-        self.cell_diagonal = None
+        self.register_buffer('cell_diagonal', None)
         self.scaling_for_flat_index = None
         self.debug = debug
         # buckets_per_cutoff is also the number of buckets that is scanned in
@@ -66,8 +66,10 @@ class CellListComputer(torch.nn.Module):
         index_disp_1d = torch.arange(-self.buckets_per_cutoff, 1)
         # I choose all the displacements except for the zero
         # displacement that does nothing, which is the last one
-        self.vector_index_displacement = torch.cartesian_prod(
+        vector_index_displacement = torch.cartesian_prod(
                                 index_disp_1d, index_disp_1d, index_disp_1d)[:-1]
+        self.register_buffer('vector_index_displacement', vector_index_displacement)
+
         if not debug:
             # right now I will only support this, and the extra neighbors are
             # hardcoded full support for arbitrary buckets per cutoff is
@@ -112,10 +114,14 @@ class CellListComputer(torch.nn.Module):
                                                         [1, 1, 0], # 16
                                                         [1, 0, 0], # 17
                                                         ])
-        self.translation_displacement_indices =\
+        translation_displacement_indices =\
         torch.cat((torch.tensor([[0, 0, 0]]),
             self.vector_index_displacement, extra_translation_displacements), dim=0)
-        self.translation_displacements = torch.zeros_like(self.translation_displacement_indices)
+
+        self.register_buffer('translation_displacement_indices', translation_displacement_indices)
+
+        translation_displacements = torch.zeros_like(self.translation_displacement_indices)
+        self.register_buffer('translation_displacements', translation_displacements)
         if not debug:
             assert self.translation_displacements.shape == torch.Size([18, 3])
             assert self.translation_displacement_indices.shape == torch.Size([18, 3])
@@ -125,7 +131,8 @@ class CellListComputer(torch.nn.Module):
         self.num_neighbors = len(self.vector_index_displacement)
         # Get the length of a bucket in the bucket grid  shape 3, (Bx, By, Bz)
         # The length is cutoff/buckets_per_cutoff + epsilon
-        self.bucket_length = self._get_bucket_length()
+        bucket_length = self._get_bucket_length()
+        self.register_buffer('bucket_length', bucket_length)
 
     def setup_cell_parameters(self,  cell: Tensor):
         current_device = cell.device
@@ -169,7 +176,7 @@ class CellListComputer(torch.nn.Module):
         # 4) create the vector_index -> flat_index conversion tensor
         # it is not really necessary to perform circular padding, 
         # since we can index the array using negative indices!
-        self.vector_idx_to_flat = torch.arange(0, self.total_buckets)
+        self.vector_idx_to_flat = torch.arange(0, self.total_buckets, device=current_device)
         self.vector_idx_to_flat = self.vector_idx_to_flat.reshape(
                                                 self.shape_buckets_grid[0], 
                                                 self.shape_buckets_grid[1],
@@ -289,8 +296,9 @@ class CellListComputer(torch.nn.Module):
 
         # imidx_from_atidx returns tensors that convert image indices into atom
         # indices and viceversa
-        atidx_from_imidx  = stable_argsort(x.squeeze())
-        imidx_from_atidx = stable_argsort(atidx_from_imidx)
+        # move to device necessary? not sure
+        atidx_from_imidx  = stable_argsort(x.squeeze()).to(x.device)
+        imidx_from_atidx = stable_argsort(atidx_from_imidx).to(x.device)
         return imidx_from_atidx, atidx_from_imidx
 
     def get_atoms_in_flat_bucket_counts(self, atom_flat_index):
@@ -301,8 +309,8 @@ class CellListComputer(torch.nn.Module):
         # 5 5 ... 5 6 6 7 ...
         atom_flat_index = atom_flat_index.squeeze()
         flat_bucket_count = torch.bincount(atom_flat_index,
-                                              minlength=self.total_buckets) 
-        flat_bucket_cumcount = cumsum_from_zero(flat_bucket_count)
+                                              minlength=self.total_buckets).to(atom_flat_index.device)
+        flat_bucket_cumcount = cumsum_from_zero(flat_bucket_count).to(atom_flat_index.device)
 
         # this is A*
         max_in_bucket = flat_bucket_count.max() 
@@ -360,7 +368,7 @@ class CellListComputer(torch.nn.Module):
         # this is basically broadcasted to the shape of fna
         # shape is 1 x A x eta x A*
         atoms = neighbor_count.shape[1]
-        padded_atom_neighbors = torch.arange(0, max_in_bucket)
+        padded_atom_neighbors = torch.arange(0, max_in_bucket, device = neighbor_count.device)
         padded_atom_neighbors = padded_atom_neighbors.reshape(1, 1, 1, -1)
         padded_atom_neighbors = padded_atom_neighbors.repeat(1, atoms, self.num_neighbors, 1)
 
@@ -408,7 +416,7 @@ class CellListComputer(torch.nn.Module):
          
         atoms = neighbor_vector_indices.shape[1]
         neighbors = neighbor_vector_indices.shape[2]
-        neighbor_vector_indices += torch.ones(1, dtype=torch.long)
+        neighbor_vector_indices += torch.ones(1, dtype=torch.long, device = atom_vector_index.device)
         neighbor_vector_indices = neighbor_vector_indices.reshape(-1, 3).unbind(1)
         neighbor_flat_indices = self.vector_idx_to_flat[neighbor_vector_indices]
         neighbor_translation_types = self.translation_cases[neighbor_vector_indices]
@@ -512,7 +520,7 @@ class AEVComputerNL(AEVComputerJoint):
                 (between_image_pairs, within_image_pairs), dim=1)
         atom_pairs = atidx_from_imidx[image_pairs]
         within_pairs_translations = torch.zeros(
-                len(within_image_pairs[0]), 3)
+                len(within_image_pairs[0]), 3, device=image_pairs.device)
         # -1 is necessary to ensure correct shifts
         shift_values = -torch.cat((between_pairs_translations,
             within_pairs_translations), dim=0)
