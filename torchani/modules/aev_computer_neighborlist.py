@@ -50,61 +50,58 @@ def cumsum_from_zero(input_: Tensor) -> Tensor:
 
 class CellListComputer(torch.nn.Module):
 
-    def __init__(self, cutoff, buckets_per_cutoff=1, debug=False):
+    def __init__(self, cutoff, buckets_per_cutoff=1):
         super().__init__()
         self.register_buffer('cell_diagonal', None)
         self.scaling_for_flat_index = None
-        self.debug = debug
         # buckets_per_cutoff is also the number of buckets that is scanned in
         # each direction it determines how fine grained the grid is, with
         # respect to the cutoff. This is 2 for amber, but 1 is useful for debug
         self.buckets_per_cutoff = buckets_per_cutoff
+        # right now I will only support this, and the extra neighbors are
+        # hardcoded full support for arbitrary buckets per cutoff is
+        # possible with something similar to xiang's code
+        assert buckets_per_cutoff == 1
+
         self.cutoff = cutoff
         # Here I get the vector index displacements for the neighbors of an
         # arbitrary vector index I think these are enough (this is different
         # from pmemd)
-        index_disp_1d = torch.arange(-self.buckets_per_cutoff, 1)
-        # I choose all the displacements except for the zero
-        # displacement that does nothing, which is the last one
-        vector_index_displacement = torch.cartesian_prod(
-                                index_disp_1d, index_disp_1d, index_disp_1d)[:-1]
+        #index_disp_1d = torch.arange(-self.buckets_per_cutoff, 1)
+        ## I choose all the displacements except for the zero
+        ## displacement that does nothing, which is the last one
+        #vector_index_displacement = torch.cartesian_prod(
+        #                        index_disp_1d, index_disp_1d, index_disp_1d)[:-1]
+        # hand written order to make sure this aligns with personal notes
+        # this order is basically right-to-left, top-to-bottom
+        # using the middle buckets (leftmost lower corner + rightmost lower bucket)
+        # and the down buckets (all)
+        # so this looks like:
+        #  x--
+        #  xo-
+        #  xxx
+        # For the middle buckets and
+        #  xxx
+        #  xxx
+        #  xxx
+        # for the down buckets
+        vector_index_displacement = torch.tensor([[-1, 0, 0], 
+                                                       [-1, -1, 0], 
+                                                       [0, -1, 0], 
+                                                       [1, -1, 0], 
+                                                       [-1, 1, -1], 
+                                                       [0, 1, -1], 
+                                                       [1, 1, -1], 
+                                                       [-1, 0, -1], 
+                                                       [0, 0, -1], 
+                                                       [1, 0, -1], 
+                                                       [-1, -1, -1], 
+                                                       [0, -1, -1], 
+                                                       [1, -1, -1]])
         self.register_buffer('vector_index_displacement', vector_index_displacement)
-
-        if not debug:
-            # right now I will only support this, and the extra neighbors are
-            # hardcoded full support for arbitrary buckets per cutoff is
-            # possible with something similar to xiang's code
-            assert buckets_per_cutoff == 1
-            # hand written order to make sure this aligns with personal notes
-            # this order is basically right-to-left, top-to-bottom
-            # using the middle buckets (leftmost lower corner + rightmost lower bucket)
-            # and the down buckets (all)
-            # so this looks like:
-            #  x--
-            #  xo-
-            #  xxx
-            # For the middle buckets and
-            #  xxx
-            #  xxx
-            #  xxx
-            # for the down buckets
-            self.vector_index_displacement = torch.tensor([[-1, 0, 0], 
-                                                           [-1, -1, 0], 
-                                                           [0, -1, 0], 
-                                                           [1, -1, 0], 
-                                                           [-1, 1, -1], 
-                                                           [0, 1, -1], 
-                                                           [1, 1, -1], 
-                                                           [-1, 0, -1], 
-                                                           [0, 0, -1], 
-                                                           [1, 0, -1], 
-                                                           [-1, -1, -1], 
-                                                           [0, -1, -1], 
-                                                           [1, -1, -1]])
-            # these are the translation displacement indices, used to displace the 
-            # image atoms
-
-            assert self.vector_index_displacement.shape == torch.Size([13, 3])
+        # these are the translation displacement indices, used to displace the 
+        # image atoms
+        assert self.vector_index_displacement.shape == torch.Size([13, 3])
         
         # I need some extra positions for the translation displacements, in
         # particular, I need some positions for displacements that don't exist
@@ -122,9 +119,8 @@ class CellListComputer(torch.nn.Module):
 
         translation_displacements = torch.zeros_like(self.translation_displacement_indices)
         self.register_buffer('translation_displacements', translation_displacements)
-        if not debug:
-            assert self.translation_displacements.shape == torch.Size([18, 3])
-            assert self.translation_displacement_indices.shape == torch.Size([18, 3])
+        assert self.translation_displacements.shape == torch.Size([18, 3])
+        assert self.translation_displacement_indices.shape == torch.Size([18, 3])
 
         # This is 26 for 2 buckets and 17 for 1 bucket 
         # This is necessary for the image - atom map and atom - image map
@@ -387,12 +383,10 @@ class CellListComputer(torch.nn.Module):
         assert padded_atom_neighbors.shape == mask.shape
         assert neighbor_translation_types.shape == mask.shape
         lower = torch.masked_select(padded_atom_neighbors, mask)
-        if not self.debug:
-            between_pairs_translations = torch.masked_select(neighbor_translation_types, mask)
-            between_pairs_translations = self.translation_displacements.index_select(0, between_pairs_translations)
-            assert between_pairs_translations.shape[-1] == 3
-            return lower, between_pairs_translations
-        return lower, None
+        between_pairs_translations = torch.masked_select(neighbor_translation_types, mask)
+        between_pairs_translations = self.translation_displacements.index_select(0, between_pairs_translations)
+        assert between_pairs_translations.shape[-1] == 3
+        return lower, between_pairs_translations
         
 
     def get_bucket_indices(self, fractional_coordinates):
