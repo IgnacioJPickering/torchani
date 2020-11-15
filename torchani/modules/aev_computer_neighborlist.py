@@ -125,10 +125,10 @@ class CellListComputer(torch.nn.Module):
         # This is 26 for 2 buckets and 17 for 1 bucket 
         # This is necessary for the image - atom map and atom - image map
         self.num_neighbors = len(self.vector_index_displacement)
-        # Get the length of a bucket in the bucket grid  shape 3, (Bx, By, Bz)
-        # The length is cutoff/buckets_per_cutoff + epsilon
-        bucket_length = self._get_bucket_length()
-        self.register_buffer('bucket_length', bucket_length)
+        # Get the lower bound of the length of a bucket in the bucket grid
+        # shape 3, (Bx, By, Bz) The length is cutoff/buckets_per_cutoff +
+        # epsilon
+        self._register_bucket_length_lower_bound()
 
     def setup_cell_parameters(self,  cell: Tensor):
         current_device = cell.device
@@ -155,11 +155,13 @@ class CellListComputer(torch.nn.Module):
         # indices for the buckets written in row major order (or equivalently
         # dictionary order), the number F = Gx*Gy*Gz
 
-        # bucket_length = B, unit cell U_mu = B * 3 - epsilon this means I need
-        # 3 buckets to cover completely the whole thing so max bucket index
-        # should be 2
+        # bucket_length_lower_bound = B, unit cell U_mu = B * 3 - epsilon this means I need
+        # if my unit cell es B*3 + epsilon => I can cover it with 3 buckets plus
+        # some extra space that is less than a bucket, so I just stretch the buckets 
+        # a little bit. In this particular case shape_buckets_grid = [3, 3, 3]
         self.shape_buckets_grid = torch.floor(
-                self.cell_diagonal / self.bucket_length).to(torch.long) + 1
+                self.cell_diagonal / self.bucket_length_lower_bound).to(torch.long) 
+
         self.total_buckets = self.shape_buckets_grid.prod()
         
         # 3) This is needed to scale and flatten last dimension of bucket indices
@@ -216,7 +218,7 @@ class CellListComputer(torch.nn.Module):
         x = functional.pad(x, (1,1, 1, 1, 1, 1), mode='circular')
         return x.squeeze()
 
-    def _get_bucket_length(self, extra_space: float =0.00001):
+    def _register_bucket_length_lower_bound(self, extra_space: float =0.00001):
         # Get the size (Bx, By, Bz) of the buckets in the grid
         # extra space by default is consistent with Amber
         # The spherical factor is different from 1 in the case of nonorthogonal
@@ -224,9 +226,11 @@ class CellListComputer(torch.nn.Module):
         # what that is but I think it is related to the fact that the sphere of
         # radius "cutoff" around an atom needs some extra space in
         # nonorthogonal boxes.
+        # note that this is not actually the bucket length used in the grid, 
+        # it is only a lower bound used to calculate the grid size
         spherical_factor = torch.ones(3, dtype=torch.double)
-        bucket_length = (spherical_factor * self.cutoff / self.buckets_per_cutoff) + extra_space
-        return bucket_length
+        bucket_length_lower_bound = (spherical_factor * self.cutoff / self.buckets_per_cutoff) + extra_space
+        self.register_buffer('bucket_length_lower_bound', bucket_length_lower_bound)
 
     def to_flat_index(self, x: Tensor) -> Tensor:
         # Converts a tensor with bucket indices in the last dimension to a tensor with
@@ -259,9 +263,17 @@ class CellListComputer(torch.nn.Module):
         # turned into 3.15; if it is 0.15 times the cell length, it is turned
         # into 0.15, etc
         #fractional_coordinates = coordinates / self.cell_diagonal.reshape(1, 1, -1)
-        fractional_coordinates = coordinates / (self.bucket_length * self.shape_buckets_grid).reshape(1, 1, -1)
-        assert (fractional_coordinates < 1.).all(),\
-            "Some coordinates are outside the box"
+        fractional_coordinates = coordinates / self.cell_diagonal.reshape(1, 1, -1)
+        # this is done to account for possible coordinates outside the box,
+        # which amber does, in order to calculate diffusion coefficients, etc
+        fractional_coordinates = fractional_coordinates - torch.floor(fractional_coordinates) 
+        # fractional_coordinates should be in the range [0, 1.0)
+        if not (fractional_coordinates < 1.).all():
+            print("Some fractional coordinates are too large")
+            print(fractional_coordinates)
+            assert (fractional_coordinates < 1.).all()
+        assert (fractional_coordinates >= 0.).all(),\
+            "Some coordinates are too small"
         return fractional_coordinates
 
     def fractional_to_vector_bucket_indices(self, fractional: Tensor) -> Tensor:
