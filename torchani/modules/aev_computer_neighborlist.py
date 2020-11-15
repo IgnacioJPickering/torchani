@@ -1,47 +1,13 @@
 from typing import Tuple
-from collections import namedtuple
 
 import torch
 from torch.nn import functional
 from torch import Tensor
 
 from .aev_computer_joint import AEVComputerJoint
-
-def stable_argsort(input_: Tensor):
-    # argsort is NOT stable, it doesn't preserve order of equal elements
-    # this means that it is not possible to use argsort again to recover a 
-    # mapping that will preserve the original order of the elements.
-
-    # hack to ensure stable sorting, works in pytorch 1.6.0 but may break in
-    # the future, ideally stable sorting should be used here if the length of
-    # the array is 2050 or more pytorch uses stable sort, so I pad the array
-    # with very large numbers to go over that length if the array is small,
-    # then sort and then unpad. There should not be much overhead
-    if len(input_) <= 2050: 
-        padded_input = functional.pad(input_, (0, 2050),'constant', 9000000000000)
-        sorted_ = torch.argsort(padded_input)[:len(input_)]
-    else:
-        sorted_ = torch.argsort(input_)
-    return sorted_
-
-def stable_sort(input_: Tensor):
-    # sort is NOT stable, it doesn't preserve order of equal elements
-    # this means that it is not possible to use argsort again to recover a 
-    # mapping that will preserve the original order of the elements.
-
-    # hack to ensure stable sorting, works in pytorch 1.6.0 but may break in
-    # the future, ideally stable sorting should be used here if the length of
-    # the array is 2050 or more pytorch uses stable sort, so I pad the array
-    # with very large numbers to go over that length if the array is small,
-    # then sort and then unpad. There should not be much overhead
-    if len(input_) <= 2050: 
-        padded_input = functional.pad(input_, (0, 2050),'constant', 9000000000000)
-        sorted_ = torch.sort(padded_input)
-        IdxVal = namedtuple('IdxVal', 'indices values')
-        sorted_ = IdxVal(indices=sorted_.indices[:len(input_)], values=sorted_.values[:len(input_)])
-    else:
-        sorted_ = torch.sort(input_)
-    return sorted_
+# these are needed due to pytorch's default sort and argsort being 
+# unstable (don't preserve order)
+from .workarounds import stable_sort, stable_argsort
 
 def cumsum_from_zero(input_: Tensor) -> Tensor:
     cumsum = torch.zeros_like(input_)
@@ -130,7 +96,7 @@ class CellListComputer(torch.nn.Module):
         # epsilon
         self._register_bucket_length_lower_bound()
 
-    def setup_cell_parameters(self,  cell: Tensor):
+    def setup_cell_parameters(self,  cell: Tensor) -> Tuple[Tensor, Tensor]:
         current_device = cell.device
         # NOTE: if this is an NVT calculation this can be called only once
         # without issue
@@ -142,7 +108,7 @@ class CellListComputer(torch.nn.Module):
         # to start with 
 
         # 1) Update the cell diagonal and translation displacements
-        self.cell_diagonal = torch.diagonal(cell.detach())
+        self.cell_diagonal = torch.diagonal(cell)
         # I just need to index select this and add it to the coordinates to displace them
         self.translation_displacements = self.translation_displacement_indices * self.cell_diagonal
         
@@ -213,7 +179,7 @@ class CellListComputer(torch.nn.Module):
         return self.shape_buckets_grid, self.total_buckets
 
     @staticmethod
-    def _pad_circular(x):
+    def _pad_circular(x: Tensor) -> Tensor:
         x = x.unsqueeze(0).unsqueeze(0)
         x = functional.pad(x, (1,1, 1, 1, 1, 1), mode='circular')
         return x.squeeze()
@@ -233,10 +199,12 @@ class CellListComputer(torch.nn.Module):
         self.register_buffer('bucket_length_lower_bound', bucket_length_lower_bound)
 
     def to_flat_index(self, x: Tensor) -> Tensor:
-        # Converts a tensor with bucket indices in the last dimension to a tensor with
-        # flat bucket indices in the last dimension
-        # if your tensor is (N1, ..., Nd, 3) this transforms the tensor into
-        # (N1, ..., Nd), which holds the flat bucket indices
+        # Converts a tensor with bucket indices in the last dimension to a
+        # tensor with flat bucket indices in the last dimension if your tensor
+        # is (N1, ..., Nd, 3) this transforms the tensor into (N1, ..., Nd),
+        # which holds the flat bucket indices this can be done a different way,
+        # same as between but this is possibly faster (?) NOTE: should
+        # benchmark this or simplify the code
         assert self.scaling_for_flat_index is not None,\
             "Scaling for flat index has not been computed"
         assert x.shape[-1] == 3
@@ -250,7 +218,6 @@ class CellListComputer(torch.nn.Module):
             "Displacement for neighbors has not been computed"
         assert x.shape[-1] == 3
         x = x.unsqueeze(-2) + self.vector_index_displacement
-
         # sanity check
         assert x.shape[-1] == 3
         assert x.shape[-2] == self.vector_index_displacement.shape[0]
@@ -268,12 +235,10 @@ class CellListComputer(torch.nn.Module):
         # which amber does, in order to calculate diffusion coefficients, etc
         fractional_coordinates = fractional_coordinates - torch.floor(fractional_coordinates) 
         # fractional_coordinates should be in the range [0, 1.0)
-        if not (fractional_coordinates < 1.).all():
-            print("Some fractional coordinates are too large")
-            print(fractional_coordinates)
-            assert (fractional_coordinates < 1.).all()
+        assert (fractional_coordinates < 1.).all(),\
+            f"Some fractional coordinates are too large {fractional_coordinates}"
         assert (fractional_coordinates >= 0.).all(),\
-            "Some coordinates are too small"
+            f"Some coordinates are too small {fractional_coordinates}"
         return fractional_coordinates
 
     def fractional_to_vector_bucket_indices(self, fractional: Tensor) -> Tensor:
@@ -309,7 +274,7 @@ class CellListComputer(torch.nn.Module):
         imidx_from_atidx = stable_argsort(atidx_from_imidx).to(x.device)
         return imidx_from_atidx, atidx_from_imidx
 
-    def get_atoms_in_flat_bucket_counts(self, atom_flat_index):
+    def get_atoms_in_flat_bucket_counts(self, atom_flat_index: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         # NOTE: check if bincount if fast. (bincount is only useful for 1D
         # inputs) count in flat bucket: 3 0 0 0 ... 2 0 0 0 ... 1 0 1 0 ...,
         # shape is total buckets F cumulative buckets count has the number of
@@ -325,7 +290,7 @@ class CellListComputer(torch.nn.Module):
         return flat_bucket_count, flat_bucket_cumcount, max_in_bucket
 
     @staticmethod
-    def sort_along_row(x: Tensor, max_value, row_for_sorting=1) -> Tensor:
+    def sort_along_row(x: Tensor, max_value: Tensor, row_for_sorting : int=1) -> Tensor:
         # reorder padded pairs by ordering according to lower part instead of upper
         # based on https://discuss.pytorch.org/t/sorting-2d-tensor-by-pairs-not-columnwise/59465
         assert x.dim() == 2, "The input must have 2 dimensions"
@@ -338,7 +303,8 @@ class CellListComputer(torch.nn.Module):
         x = x.index_select(1, stable_sort(aug).indices)
         return x
 
-    def get_within_image_pairs(self, flat_bucket_count, flat_bucket_cumcount, max_in_bucket):
+    def get_within_image_pairs(self, flat_bucket_count: Tensor,
+            flat_bucket_cumcount: Tensor, max_in_bucket: Tensor) -> Tensor:
         # max_in_bucket = maximum number of atoms contained in any bucket
         current_device = flat_bucket_count.device
 
@@ -368,7 +334,9 @@ class CellListComputer(torch.nn.Module):
         within_image_pairs = torch.stack((upper, lower), dim=0)
         return within_image_pairs
 
-    def get_lower_between_image_pairs(self, neighbor_count, neighbor_cumcount, max_in_bucket, neighbor_translation_types):
+    def get_lower_between_image_pairs(self, neighbor_count: Tensor,
+            neighbor_cumcount: Tensor, max_in_bucket: Tensor,
+            neighbor_translation_types:Tensor) -> Tuple[Tensor, Tensor]:
         # neighbor_translation_types has shape 1 x At x Eta 
         # 3) now I need the LOWER part
         # this gives, for each atom, for each neighbor bucket, all the
@@ -401,14 +369,14 @@ class CellListComputer(torch.nn.Module):
         return lower, between_pairs_translations
         
 
-    def get_bucket_indices(self, fractional_coordinates):
+    def get_bucket_indices(self, fractional_coordinates: Tensor) -> Tuple[Tensor, Tensor]:
         atom_vector_index =\
                 self.fractional_to_vector_bucket_indices(fractional_coordinates)
         atom_flat_index =\
                 self.to_flat_index(atom_vector_index)
         return atom_vector_index, atom_flat_index
 
-    def get_neighbor_indices(self, atom_vector_index):
+    def get_neighbor_indices(self, atom_vector_index: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
         # This is actually pure neighbors, so it doesn't have 
         # "the bucket itself" 
         # These are 
@@ -449,6 +417,11 @@ class AEVComputerNL(AEVComputerJoint):
     def neighbor_pairs(self, padding_mask: Tensor, coordinates: Tensor, cell: Tensor,
                        shifts: Tensor, cutoff: float) -> Tuple[Tensor, Tensor]:
         assert coordinates.shape[0] == 1
+        assert (padding_mask == False).all()
+        del shifts
+        del padding_mask
+        coordinates = coordinates.detach()
+        cell = cell.detach()
         # padding mask has to be unused for this, also shifts
         # 1) Setup cell parameters, only once for constant V simulations, 
         # every time for variable V, (constant P) simulations
@@ -501,8 +474,6 @@ class AEVComputerNL(AEVComputerJoint):
         neighbor_vector_indices, neighbor_flat_indices, neighbor_translation_types =\
                 self.clist.get_neighbor_indices(atom_vector_index)
 
-
-        
         neighbor_count = flat_bucket_count[neighbor_flat_indices] 
         neighbor_cumcount = flat_bucket_cumcount[neighbor_flat_indices]
         neighborhood_count = neighbor_count.sum(-1).squeeze() 

@@ -273,24 +273,24 @@ class TestCellList(unittest.TestCase):
             _, aevsj = aevj((species, coordinates), cell=cell, pbc=pbc)
             self.assertTrue(torch.isclose(aevs, aevsj).all())
 
-    def testAEVComputerNLRandomE(self):
-        device = torch.device('cuda')
-        aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
-        aevc = AEVComputerNL.like_ani1x().to(device).to(torch.double)
-        modelj = torchani.models.ANI1x(model_index=0)
-        modelj.aev_computer = aevj
-        modelc.aev_computer = aevc
-        species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
-        for j in tqdm(range(10000)):
-            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(torch.double)*3*self.cell_size
-            coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001)
+    #def testAEVComputerNLRandomE(self):
+    #    device = torch.device('cuda')
+    #    aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
+    #    aevc = AEVComputerNL.like_ani1x().to(device).to(torch.double)
+    #    modelj = torchani.models.ANI1x(model_index=0)
+    #    modelj.aev_computer = aevj
+    #    modelc.aev_computer = aevc
+    #    species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
+    #    for j in tqdm(range(10000)):
+    #        coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(torch.double)*3*self.cell_size
+    #        coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001)
 
-            pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
-            _, aev_c = aevc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
-            _, aev_j = aevj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
-            self.assertTrue(torch.isclose(aev_c, aev_j).all())
-            #energies = torch.tensor([0.0]).double()
-            #_, eneriges_nl = model_nl((species, coordinates), cell=cell, pbc=pbc)
+    #        pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
+    #        _, aev_c = aevc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+    #        _, aev_j = aevj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+    #        self.assertTrue(torch.isclose(aev_c, aev_j).all())
+    #        #energies = torch.tensor([0.0]).double()
+    #        #_, eneriges_nl = model_nl((species, coordinates), cell=cell, pbc=pbc)
 
     #@unittest.skipIf(True, '') 
     def testAEVComputerNLRandom3(self):
