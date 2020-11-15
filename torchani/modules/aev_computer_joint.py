@@ -139,20 +139,36 @@ class AEVComputerJoint(torch.nn.Module):
         # and the catted output is [[1, 1, 1], [1, 1, 0], ... etc]
         # so it is a tensor of shape 13 x 3
         return torch.cat([
-            torch.cartesian_prod(r1, r2, r3),
-            torch.cartesian_prod(r1, r2, o),
-            torch.cartesian_prod(r1, r2, -r3),
-            torch.cartesian_prod(r1, o, r3),
-            torch.cartesian_prod(r1, o, o),
-            torch.cartesian_prod(r1, o, -r3),
-            torch.cartesian_prod(r1, -r2, r3),
-            torch.cartesian_prod(r1, -r2, o),
-            torch.cartesian_prod(r1, -r2, -r3),
-            torch.cartesian_prod(o, r2, r3),
-            torch.cartesian_prod(o, r2, o),
-            torch.cartesian_prod(o, r2, -r3),
-            torch.cartesian_prod(o, o, r3),
+            torch.cartesian_prod(-r1,  o,  o),
+            torch.cartesian_prod(-r1, -r2, o),
+            torch.cartesian_prod(o,   -r2, o),
+            torch.cartesian_prod(r1,  -r2, o),
+            torch.cartesian_prod(-r1,  r2, -r3),
+            torch.cartesian_prod(o,    r2, -r3),
+            torch.cartesian_prod(r1,   r2, -r3),
+            torch.cartesian_prod(-r1,  o,  -r3),
+            torch.cartesian_prod(o,    o,  -r3),
+            torch.cartesian_prod(r1,   o,  -r3),
+            torch.cartesian_prod(-r1, -r2, -r3),
+            torch.cartesian_prod(o,   -r2, -r3),
+            torch.cartesian_prod(r1,  -r2, -r3),
         ])
+
+        #return torch.cat([
+        #    torch.cartesian_prod(r1, r2, r3),
+        #    torch.cartesian_prod(r1, r2, o),
+        #    torch.cartesian_prod(r1, r2, -r3),
+        #    torch.cartesian_prod(r1, o, r3),
+        #    torch.cartesian_prod(r1, o, o),
+        #    torch.cartesian_prod(r1, o, -r3),
+        #    torch.cartesian_prod(r1, -r2, r3),
+        #    torch.cartesian_prod(r1, -r2, o),
+        #    torch.cartesian_prod(r1, -r2, -r3),
+        #    torch.cartesian_prod(o, r2, r3),
+        #    torch.cartesian_prod(o, r2, o),
+        #    torch.cartesian_prod(o, r2, -r3),
+        #    torch.cartesian_prod(o, o, r3),
+        #])
 
     def sizes(self) -> Tuple[int, int, int, int, int]:
         return self.num_species.item(), self.radial_sublength.item(), self.radial_length.item(), self.angular_sublength.item(), self.angular_length.item()

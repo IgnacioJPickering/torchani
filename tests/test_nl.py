@@ -1,5 +1,5 @@
 import torch
-from torchani.modules import AEVComputerNL, CellListComputer
+from torchani.modules import AEVComputerNL, CellListComputer, AEVComputerJoint
 from torchani.geometry import tile_into_cube
 import unittest
 
@@ -181,7 +181,7 @@ class TestCellList(unittest.TestCase):
         self.assertTrue(within.shape == torch.Size([2, 27]))
         self.assertTrue((within[0] == torch.arange(0, 54, 2)).all())
         self.assertTrue((within[1] == torch.arange(1, 55, 2)).all())
-
+    
     def testBetween(self):
         clist = self.clist
         clist.setup_cell_parameters(self.cell)
@@ -190,12 +190,12 @@ class TestCellList(unittest.TestCase):
         i_a, a_i = clist.get_imidx_converters(f_a)
         A_f, Ac_f, A_star = clist.get_atoms_in_flat_bucket_counts(f_a)
 
-        g_an, f_an = clist.get_neighbor_indices(g_a)
+        g_an, f_an, S = clist.get_neighbor_indices(g_a)
         A_an = A_f[f_an]
         Ac_an = Ac_f[f_an]
         An_a = A_an.sum(-1).squeeze()
         upper = torch.repeat_interleave(i_a.squeeze(), An_a)
-        lower = clist.get_lower_between_image_pairs(A_an, Ac_an, A_star)
+        lower, _= clist.get_lower_between_image_pairs(A_an, Ac_an, A_star, S)
         between = torch.stack((upper, lower), dim=0)
         self.assertTrue(between.shape == torch.Size([2, 756]))
 
@@ -215,38 +215,158 @@ class TestCellList(unittest.TestCase):
         g_a, f_a = clist.get_bucket_indices(frac)
         i_a, a_i = clist.get_imidx_converters(f_a)
         A_f, Ac_f, A_star = clist.get_atoms_in_flat_bucket_counts(f_a)
-        print(g_a.shape) # shape is 1, 54, 3
-        g_an, f_an = clist.get_neighbor_indices(g_a)
-        #print(g_an.shape)
-        #A_an = A_f[f_an]
-        #Ac_an = Ac_f[f_an]
-        #An_a = A_an.sum(-1).squeeze()
-        #upper = torch.repeat_interleave(i_a.squeeze(), An_a)
-        #lower = clist.get_lower_between_image_pairs(A_an, Ac_an, A_star)
-        #between = torch.stack((upper, lower), dim=0)
-        #self.assertTrue(between.shape == torch.Size([2, 756]))
-
-        ## some hand comparisons with the between_image indices
-        #compare_between_lower = torch.tensor([26, 27, 28, 29, 32, 33, 34, 35, 44, 45, 46, 47, 50, 51], dtype=torch.long)
-        #compare_between_upper1 = torch.ones(14, dtype=torch.long) * 52
-        #compare_between_upper2 = torch.ones(14, dtype=torch.long) * 53
-        #self.assertTrue((between[0][-14:] == compare_between_upper1).all())
-        #self.assertTrue((between[0][-28:-14] == compare_between_upper2).all())
-        #self.assertTrue((between[1][-14:] == compare_between_lower).all())
-        #self.assertTrue((between[1][-28:-14] == compare_between_lower).all())
+        g_an, f_an, _ = clist.get_neighbor_indices(g_a)
 
     def testAEVComputerNLInit(self):
         AEVComputerNL.like_ani1x()
-        
-    @unittest.skipIf(True, '')
+
+    @unittest.skipIf(True, '') 
+    def testAEVComputerNL1(self):
+        cut = 5.2 - 0.01 # The length of the box is ~ 3 * this so that 
+        d = 0.5
+        coordinates = torch.tensor([
+                                    [cut/2-d, cut/2-d, cut/2-d],
+                                    [cut/2 + 0.1, cut/2 + 0.1, cut/2 + 0.1], 
+                                    [cut/2 , cut/2 + 2.4 * cut, cut/2 + 2.4*cut],
+                                     ]).unsqueeze(0)
+        species = torch.tensor([0, 0, 0]).unsqueeze(0)
+        # first bucket is 0 - 5.2, in 3 directions, and subsequent buckets
+        # are on top of that
+        cell = torch.diag(torch.tensor([cut*3, cut*3, cut*3])).float()
+        pbc = torch.tensor([True, True, True], dtype=torch.bool)
+        aevc = AEVComputerNL.like_ani1x()
+        aevj = AEVComputerJoint.like_ani1x()
+        _, aevs = aevc((species, coordinates), cell=cell, pbc=pbc)
+        _, aevsj = aevj((species, coordinates), cell=cell, pbc=pbc)
+        self.assertTrue(torch.isclose(aevs, aevsj).all())
+
+    @unittest.skipIf(True, '') 
+    def testAEVComputerNL2(self):
+        cut = 5.2 - 0.01 # The length of the box is ~ 3 * this so that 
+        d = 0.5
+        coordinates = torch.tensor([
+                                    [cut/2-d, cut/2-d, cut/2-d],
+                                    [cut/2 + 0.1, cut/2 + 0.1, cut/2 + 0.1], 
+                                    [cut/2 + 2.4*cut , cut/2 + 2.4 * cut, cut/2 + 2.4*cut],
+                                     ]).unsqueeze(0)
+        species = torch.tensor([0, 0, 0]).unsqueeze(0)
+        # first bucket is 0 - 5.2, in 3 directions, and subsequent buckets
+        # are on top of that
+        cell = torch.diag(torch.tensor([cut*3, cut*3, cut*3])).float()
+        pbc = torch.tensor([True, True, True], dtype=torch.bool)
+        aevc = AEVComputerNL.like_ani1x()
+        aevj = AEVComputerJoint.like_ani1x()
+        _, aevs = aevc((species, coordinates), cell=cell, pbc=pbc)
+        _, aevsj = aevj((species, coordinates), cell=cell, pbc=pbc)
+        self.assertTrue(torch.isclose(aevs, aevsj).all())
+    
+    @unittest.skipIf(True, '') 
+    def testAEVComputerNL3(self):
+        cut = 5.2 - 0.01 # The length of the box is ~ 3 * this so that 
+        coordinates = torch.tensor([[[1.0000e-03, 6.5207e+00, 1.0000e-03],
+         [1.0000e-03, 1.5299e+01, 1.3643e+01],
+         [1.0000e-03, 2.1652e+00, 1.5299e+01]]])
+        species = torch.tensor([0, 0, 0]).unsqueeze(0)
+        # first bucket is 0 - 5.2, in 3 directions, and subsequent buckets
+        # are on top of that
+        cell = torch.diag(torch.tensor([cut*3, cut*3, cut*3])).float()
+        pbc = torch.tensor([True, True, True], dtype=torch.bool)
+        aevc = AEVComputerNL.like_ani1x()
+        aevj = AEVComputerJoint.like_ani1x()
+        _, aevs = aevc((species, coordinates), cell=cell, pbc=pbc)
+        _, aevsj = aevj((species, coordinates), cell=cell, pbc=pbc)
+        self.assertTrue(torch.isclose(aevs, aevsj).all())
+
+    @unittest.skipIf(True, '') 
+    def testAEVComputerNL4(self):
+        cut = 5.2 - 0.01 # The length of the box is ~ 3 * this so that 
+        coordinates = torch.tensor([[[1.5299e+01, 1.0000e-03, 5.5613e+00],
+                 [1.0000e-03, 1.0000e-03, 3.8310e+00],
+                 [1.5299e+01, 1.1295e+01, 1.5299e+01]]])
+        species = torch.tensor([0, 0, 0]).unsqueeze(0)
+        # first bucket is 0 - 5.2, in 3 directions, and subsequent buckets
+        # are on top of that
+        cell = torch.diag(torch.tensor([cut*3, cut*3, cut*3])).float()
+        pbc = torch.tensor([True, True, True], dtype=torch.bool)
+        aevc = AEVComputerNL.like_ani1x()
+        aevj = AEVComputerJoint.like_ani1x()
+        _, aevs = aevc((species, coordinates), cell=cell, pbc=pbc)
+        _, aevsj = aevj((species, coordinates), cell=cell, pbc=pbc)
+        self.assertTrue(torch.isclose(aevs, aevsj).all())
+
+    def testAEVComputerNL5(self):
+        cut = 5.2 - 0.1# The length of the box is ~ 3 * this so that 
+        coordinates = torch.tensor([[
+                 [1.0000e-03, 1.0000e-03, 1.0000e-03],
+                 [1.0389e+01, 1.0000e-03, 1.5299e+01],
+                 #[9.1704e+00, 1.0000e-03, 1.0000e-03]
+                 ]])
+        species = torch.tensor([ 0, 0]).unsqueeze(0)
+        # first bucket is 0 - 5.2, in 3 directions, and subsequent buckets
+        # are on top of that
+        cell = torch.diag(torch.tensor([cut*3, cut*3, cut*3])).float()
+        pbc = torch.tensor([True, True, True], dtype=torch.bool)
+        aevc = AEVComputerNL.like_ani1x()
+        aevj = AEVComputerJoint.like_ani1x()
+        _, aevs = aevc((species, coordinates), cell=cell, pbc=pbc)
+        _, aevsj = aevj((species, coordinates), cell=cell, pbc=pbc)
+        self.assertTrue(torch.isclose(aevs, aevsj).all())
+    
+    @unittest.skipIf(True, '') 
     def testAEVComputerNL(self):
         pbc = torch.tensor([True, True, True], dtype=torch.bool)
         aevc = AEVComputerNL.like_ani1x()
+        aevj = AEVComputerJoint.like_ani1x()
         species, aevs = aevc((self.species, self.coordinates), cell=self.cell, pbc=pbc)
+        species, aevsj = aevj((self.species, self.coordinates), cell=self.cell, pbc=pbc)
+        self.assertTrue(torch.isclose(aevs, aevsj).all())
 
-        #dummy_padding = torch.zeros(1)
+    @unittest.skipIf(True, '') 
+    def testAEVComputerNLRandom(self):
+        cut = 5.2 - 0.1
+        for j in range(100):
+            coordinates = torch.tensor([[cut/2, cut/2, cut/2],
+                                         [cut/2 + 0.1, cut/2 + 0.1, cut/2 + 0.1]]).unsqueeze(0)
+            species = torch.tensor([0, 0]).unsqueeze(0)
+            species, coordinates = tile_into_cube((species, coordinates), box_length=cut, noise=0.1)
 
-        #image_pairs = aevc.neighbor_pairs(dummy_padding, coordinates, shifts)
+            pbc = torch.tensor([True, True, True], dtype=torch.bool)
+            aevc = AEVComputerNL.like_ani1x()
+            aevj = AEVComputerJoint.like_ani1x()
+            _, aevs = aevc((species, coordinates), cell=self.cell, pbc=pbc)
+            _, aevsj = aevj((species, coordinates), cell=self.cell, pbc=pbc)
+            self.assertTrue(torch.isclose(aevs, aevsj).all())
+
+
+    @unittest.skipIf(True, '') 
+    def testAEVComputerNLRandom2(self):
+        cut = 5.2 - 0.1
+        for j in range(1000):
+            coordinates = torch.randn(3, 3).unsqueeze(0)*(3*cut - 0.001)
+            #coordinates = torch.clamp(coordinates, min=0.001, max=3*cut - 0.001)
+            species = torch.zeros(3).unsqueeze(0).to(torch.long)
+
+            pbc = torch.tensor([True, True, True], dtype=torch.bool)
+            aevc = AEVComputerNL.like_ani1x()
+            aevj = AEVComputerJoint.like_ani1x()
+            _, aevs = aevc((species, coordinates), cell=self.cell, pbc=pbc)
+            _, aevsj = aevj((species, coordinates), cell=self.cell, pbc=pbc)
+            self.assertTrue(torch.isclose(aevs, aevsj).all())
+
+    @unittest.skipIf(True, '') 
+    def testAEVComputerNLRandom3(self):
+        cut = 5.2 - 0.1
+        for j in range(100):
+            coordinates = torch.randn(100, 3).unsqueeze(0)*(3*cut*2.1)
+            coordinates = torch.clamp(coordinates, min=0.001, max=3*cut*2 - 0.001)
+            species = torch.zeros(100).unsqueeze(0).to(torch.long)
+
+            pbc = torch.tensor([True, True, True], dtype=torch.bool)
+            aevc = AEVComputerNL.like_ani1x()
+            aevj = AEVComputerJoint.like_ani1x()
+            _, aevs = aevc((species, coordinates), cell=self.cell*2, pbc=pbc)
+            _, aevsj = aevj((species, coordinates), cell=self.cell*2, pbc=pbc)
+            self.assertTrue(torch.isclose(aevs, aevsj).all())
 
 
 if __name__ == '__main__':

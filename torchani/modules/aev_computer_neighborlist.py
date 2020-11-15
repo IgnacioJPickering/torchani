@@ -7,7 +7,6 @@ from torch import Tensor
 
 from .aev_computer_joint import AEVComputerJoint
 
-
 def stable_argsort(input_: Tensor):
     # argsort is NOT stable, it doesn't preserve order of equal elements
     # this means that it is not possible to use argsort again to recover a 
@@ -44,7 +43,6 @@ def stable_sort(input_: Tensor):
         sorted_ = torch.sort(input_)
     return sorted_
 
-
 def cumsum_from_zero(input_: Tensor) -> Tensor:
     cumsum = torch.zeros_like(input_)
     torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
@@ -56,6 +54,7 @@ class CellListComputer(torch.nn.Module):
         super().__init__()
         self.cell_diagonal = None
         self.scaling_for_flat_index = None
+        self.debug = debug
         # buckets_per_cutoff is also the number of buckets that is scanned in
         # each direction it determines how fine grained the grid is, with
         # respect to the cutoff. This is 2 for amber, but 1 is useful for debug
@@ -74,12 +73,52 @@ class CellListComputer(torch.nn.Module):
             # hardcoded full support for arbitrary buckets per cutoff is
             # possible with something similar to xiang's code
             assert buckets_per_cutoff == 1
-            extra_neighbors = torch.tensor([[-1, 1, 0], 
-                                            [1, 1, -1], [1, 0, -1] , [1, -1, -1], 
-                                            [0, 1, -1], [-1, 1, -1]])
-            # append extra displacements
-            self.vector_index_displacement = torch.cat((self.vector_index_displacement, extra_neighbors), dim=0)
+            # hand written order to make sure this aligns with personal notes
+            # this order is basically right-to-left, top-to-bottom
+            # using the middle buckets (leftmost lower corner + rightmost lower bucket)
+            # and the down buckets (all)
+            # so this looks like:
+            #  x--
+            #  xo-
+            #  xxx
+            # For the middle buckets and
+            #  xxx
+            #  xxx
+            #  xxx
+            # for the down buckets
+            self.vector_index_displacement = torch.tensor([[-1, 0, 0], 
+                                                           [-1, -1, 0], 
+                                                           [0, -1, 0], 
+                                                           [1, -1, 0], 
+                                                           [-1, 1, -1], 
+                                                           [0, 1, -1], 
+                                                           [1, 1, -1], 
+                                                           [-1, 0, -1], 
+                                                           [0, 0, -1], 
+                                                           [1, 0, -1], 
+                                                           [-1, -1, -1], 
+                                                           [0, -1, -1], 
+                                                           [1, -1, -1]])
+            # these are the translation displacement indices, used to displace the 
+            # image atoms
+
             assert self.vector_index_displacement.shape == torch.Size([13, 3])
+        
+        # I need some extra positions for the translation displacements, in
+        # particular, I need some positions for displacements that don't exist
+        # inside individual boxes
+        extra_translation_displacements = torch.tensor([[-1, 1, 0],# 14
+                                                        [0, 1, 0], # 15
+                                                        [1, 1, 0], # 16
+                                                        [1, 0, 0], # 17
+                                                        ])
+        self.translation_displacement_indices =\
+        torch.cat((torch.tensor([[0, 0, 0]]),
+            self.vector_index_displacement, extra_translation_displacements), dim=0)
+        self.translation_displacements = torch.zeros_like(self.translation_displacement_indices)
+        if not debug:
+            assert self.translation_displacements.shape == torch.Size([18, 3])
+            assert self.translation_displacement_indices.shape == torch.Size([18, 3])
 
         # This is 26 for 2 buckets and 17 for 1 bucket 
         # This is necessary for the image - atom map and atom - image map
@@ -99,8 +138,10 @@ class CellListComputer(torch.nn.Module):
         # by cell(3, 3). I will assume coordinates are already inside the cell
         # to start with 
 
-        # 1) Update the cell diagonal
+        # 1) Update the cell diagonal and translation displacements
         self.cell_diagonal = torch.diagonal(cell.detach())
+        # I just need to index select this and add it to the coordinates to displace them
+        self.translation_displacements = self.translation_displacement_indices * self.cell_diagonal
         
         # 2) Get max bucket index (Gx, Gy, Gz)
         # which give the size of the grid of buckets that fully covers the
@@ -134,7 +175,35 @@ class CellListComputer(torch.nn.Module):
                                                 self.shape_buckets_grid[1],
                                                 self.shape_buckets_grid[2])
 
+
+
         self.vector_idx_to_flat = self._pad_circular(self.vector_idx_to_flat)
+
+        # 5) I now create a tensor that when indexed with vector indices
+        # gives the shifting case for that atom/neighbor bucket
+        self.translation_cases = torch.zeros_like(self.vector_idx_to_flat)
+        # now I need to  fill the vector 
+        # in some smart way
+        # this should fill the tensor in a smart way
+        self.translation_cases[0, 1:-1,1:-1] = 1
+        self.translation_cases[0,0,1:-1] = 2
+        self.translation_cases[1:-1,0,1:-1] = 3
+        self.translation_cases[-1,0,1:-1] = 4
+        self.translation_cases[0,-1,0] = 5
+        self.translation_cases[1:-1,-1,0] = 6
+        self.translation_cases[-1,-1,0] = 7
+        self.translation_cases[0,1:-1,0] = 8
+        self.translation_cases[1:-1,1:-1,0] = 9
+        self.translation_cases[-1, 1:-1,0] = 10
+        self.translation_cases[0,0,0] = 11
+        self.translation_cases[1:-1,0,0] = 12
+        self.translation_cases[-1,0,0] = 13
+        # extra
+        self.translation_cases[0,-1,1:-1] = 14
+        self.translation_cases[1:-1,-1,1:-1] = 15
+        self.translation_cases[-1,-1,1:-1] = 16
+        self.translation_cases[-1,1:-1,1:-1] = 17
+
 
         return self.shape_buckets_grid, self.total_buckets
 
@@ -186,7 +255,8 @@ class CellListComputer(torch.nn.Module):
         # instance that if the coordinate is 3.15 times the cell length, it is
         # turned into 3.15; if it is 0.15 times the cell length, it is turned
         # into 0.15, etc
-        fractional_coordinates = coordinates / self.cell_diagonal.reshape(1, 1, -1)
+        #fractional_coordinates = coordinates / self.cell_diagonal.reshape(1, 1, -1)
+        fractional_coordinates = coordinates / (self.bucket_length * self.shape_buckets_grid).reshape(1, 1, -1)
         assert (fractional_coordinates < 1.).all(),\
             "Some coordinates are outside the box"
         return fractional_coordinates
@@ -200,7 +270,7 @@ class CellListComputer(torch.nn.Module):
         # bucket" and "neighboring buckets"
         assert self.shape_buckets_grid is not None,\
             "Max bucket index not computed"
-        out = torch.round(fractional * (self.shape_buckets_grid - 1).reshape(1, 1, -1)).to(torch.long)
+        out = torch.floor(fractional * (self.shape_buckets_grid).reshape(1, 1, -1)).to(torch.long)
         return out
 
     @staticmethod
@@ -219,8 +289,8 @@ class CellListComputer(torch.nn.Module):
 
         # imidx_from_atidx returns tensors that convert image indices into atom
         # indices and viceversa
-        imidx_from_atidx  = stable_argsort(x.squeeze())
-        atidx_from_imidx = stable_argsort(imidx_from_atidx)
+        atidx_from_imidx  = stable_argsort(x.squeeze())
+        imidx_from_atidx = stable_argsort(atidx_from_imidx)
         return imidx_from_atidx, atidx_from_imidx
 
     def get_atoms_in_flat_bucket_counts(self, atom_flat_index):
@@ -282,7 +352,8 @@ class CellListComputer(torch.nn.Module):
         within_image_pairs = torch.stack((upper, lower), dim=0)
         return within_image_pairs
 
-    def get_lower_between_image_pairs(self, neighbor_count, neighbor_cumcount, max_in_bucket):
+    def get_lower_between_image_pairs(self, neighbor_count, neighbor_cumcount, max_in_bucket, neighbor_translation_types):
+        # neighbor_translation_types has shape 1 x At x Eta 
         # 3) now I need the LOWER part
         # this gives, for each atom, for each neighbor bucket, all the
         # unpadded, unshifted atom neighbors
@@ -292,6 +363,9 @@ class CellListComputer(torch.nn.Module):
         padded_atom_neighbors = torch.arange(0, max_in_bucket)
         padded_atom_neighbors = padded_atom_neighbors.reshape(1, 1, 1, -1)
         padded_atom_neighbors = padded_atom_neighbors.repeat(1, atoms, self.num_neighbors, 1)
+
+        # repeat the neighbor translation types to account for all neighboring atoms
+        neighbor_translation_types = neighbor_translation_types.unsqueeze(-1).repeat(1, 1, 1, padded_atom_neighbors.shape[-1])
 
         # now I need to add A(f' < fna) shift the padded atom neighbors to get
         # image indices I need to check here that the cumcount is correct since
@@ -303,8 +377,15 @@ class CellListComputer(torch.nn.Module):
         # the mask should have the same shape as padded_atom_neighbors, and
         # now all that is left is to apply the mask in order to unpad
         assert padded_atom_neighbors.shape == mask.shape
+        assert neighbor_translation_types.shape == mask.shape
         lower = torch.masked_select(padded_atom_neighbors, mask)
-        return lower
+        if not self.debug:
+            between_pairs_translations = torch.masked_select(neighbor_translation_types, mask)
+            between_pairs_translations = self.translation_displacements.index_select(0, between_pairs_translations)
+            assert between_pairs_translations.shape[-1] == 3
+            return lower, between_pairs_translations
+        return lower, None
+        
 
     def get_bucket_indices(self, fractional_coordinates):
         atom_vector_index =\
@@ -322,15 +403,18 @@ class CellListComputer(torch.nn.Module):
         # These give, for each atom, the flat index or the vector index of its
         # neighbor buckets (neighbor buckets indexed by n).
         neighbor_vector_indices = self.expand_into_neighbors(atom_vector_index) 
-        print(neighbor_vector_indices)
-
+        # these vector indices have the information that says whether to shift
+        # each pair and what amount to shift it 
+         
         atoms = neighbor_vector_indices.shape[1]
         neighbors = neighbor_vector_indices.shape[2]
         neighbor_vector_indices += torch.ones(1, dtype=torch.long)
         neighbor_vector_indices = neighbor_vector_indices.reshape(-1, 3).unbind(1)
         neighbor_flat_indices = self.vector_idx_to_flat[neighbor_vector_indices]
+        neighbor_translation_types = self.translation_cases[neighbor_vector_indices]
+        neighbor_translation_types = neighbor_translation_types.reshape(1, atoms, neighbors)
         neighbor_flat_indices = neighbor_flat_indices.reshape(1, atoms, neighbors)
-        return neighbor_vector_indices, neighbor_flat_indices
+        return neighbor_vector_indices, neighbor_flat_indices, neighbor_translation_types
 
 
 class AEVComputerNL(AEVComputerJoint):
@@ -350,6 +434,7 @@ class AEVComputerNL(AEVComputerJoint):
 
     def neighbor_pairs(self, padding_mask: Tensor, coordinates: Tensor, cell: Tensor,
                        shifts: Tensor, cutoff: float) -> Tuple[Tensor, Tensor]:
+        assert coordinates.shape[0] == 1
         # padding mask has to be unused for this, also shifts
         # 1) Setup cell parameters, only once for constant V simulations, 
         # every time for variable V, (constant P) simulations
@@ -368,7 +453,7 @@ class AEVComputerNL(AEVComputerJoint):
         # shape C x A this gives f(a), the flat bucket idx for atom a
         atom_vector_index, atom_flat_index =\
                                 self.clist.get_bucket_indices(fractional_coordinates)
-        
+        torch.set_printoptions(precision=15)
         # 4) get image_indices -> atom_indices and inverse mapping
         # NOTE: there is not necessarily a requirement to do this here
         # both shape A, a(i) and i(a)
@@ -396,28 +481,54 @@ class AEVComputerNL(AEVComputerJoint):
         # neighborhood count is A{n} (a), the number of atoms on the
         # neighborhood (all the neighbor buckets) of each atom,
         # A{n} (a) has shape 1 x A
-        neighbor_vector_indices, neighbor_flat_indices =\
+        # neighbor_translation_types 
+        # has the type of shift for T(a, n), atom a, 
+        # neighbor bucket n
+        neighbor_vector_indices, neighbor_flat_indices, neighbor_translation_types =\
                 self.clist.get_neighbor_indices(atom_vector_index)
+
+
         
         neighbor_count = flat_bucket_count[neighbor_flat_indices] 
         neighbor_cumcount = flat_bucket_cumcount[neighbor_flat_indices]
         neighborhood_count = neighbor_count.sum(-1).squeeze() 
 
-        # 2) Upper and lower part of the external pairlist
-        # this is the correct "unpadded" upper part of the pairlist
-        # it repeats each image idx a number of times equal to the number
-        # of atoms on the neighborhood of each atom
-        upper = torch.repeat_interleave(imidx_from_atidx.squeeze(), neighborhood_count)
-        lower =\
+        # 2) Upper and lower part of the external pairlist this is the
+        # correct "unpadded" upper 
+        # part of the pairlist it repeats each image
+        # idx a number of times equal to the number of atoms on the
+        # neighborhood of each atom
+        upper = torch.repeat_interleave(imidx_from_atidx.squeeze(),
+                neighborhood_count)
+        lower, between_pairs_translations =\
             self.clist.get_lower_between_image_pairs(neighbor_count,
-                                   neighbor_cumcount, max_in_bucket)
+                                   neighbor_cumcount, max_in_bucket,
+                                   neighbor_translation_types)
         assert lower.shape == upper.shape
         between_image_pairs = torch.stack((upper, lower), dim=0)
 
-        # stack within and between
-        image_pairs = torch.stack((between_image_pairs, within_image_pairs), dim=1)
-
+        # concatenate within and between
+        image_pairs = torch.cat(
+                (between_image_pairs, within_image_pairs), dim=1)
         atom_pairs = atidx_from_imidx[image_pairs]
-        print(atom_pairs)
-
-        exit()
+        within_pairs_translations = torch.zeros(
+                len(within_image_pairs[0]), 3)
+        # -1 is necessary to ensure correct shifts
+        shift_values = -torch.cat((between_pairs_translations,
+            within_pairs_translations), dim=0)
+        shift_indices =\
+        (shift_values/self.clist.cell_diagonal).to(torch.long)
+        assert shift_values.shape[0] == atom_pairs.shape[1]
+        num_mols = coordinates.shape[0]
+        num_atoms = coordinates.shape[1]
+        selected_coordinates = coordinates.index_select(1,
+                atom_pairs.view(-1)).view(num_mols, 2, -1, 3) 
+        distances = (selected_coordinates[:, 0, ...] -\
+                selected_coordinates[:, 1, ...] + shift_values
+                ).norm(2, -1)
+        in_cutoff = (distances <= cutoff).nonzero()    
+        molecule_index, pair_index = in_cutoff.unbind(1)    
+        molecule_index *= num_atoms    
+        atom_index12 = atom_pairs[:, pair_index]    
+        shifts = shift_indices.index_select(0, pair_index)    
+        return molecule_index + atom_index12, shifts    
