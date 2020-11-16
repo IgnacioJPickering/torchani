@@ -136,7 +136,7 @@ class TestCellList(unittest.TestCase):
         i_a, a_i = clist.get_imidx_converters(f_a)
         A_f, Ac_f, A_star = clist.get_atoms_in_flat_bucket_counts(f_a)
 
-        g_an, f_an, S = clist.get_neighbor_indices(g_a)
+        f_an, S = clist.get_neighbor_indices(g_a)
         A_an = A_f[f_an]
         Ac_an = Ac_f[f_an]
         An_a = A_an.sum(-1).squeeze()
@@ -150,6 +150,8 @@ class TestCellList(unittest.TestCase):
         compare_between_upper1 = torch.ones(14, dtype=torch.long) * 52
         # TODO I need new comparisons for these
         #compare_between_upper2 = torch.ones(14, dtype=torch.long) * 53
+        print(between[0][-14:])
+        print(compare_between_upper1)
         self.assertTrue((between[0][-14:] == compare_between_upper1).all())
         #self.assertTrue((between[0][-28:-14] == compare_between_upper2).all())
         #self.assertTrue((between[1][-14:] == compare_between_lower).all())
@@ -292,7 +294,7 @@ class TestCellList(unittest.TestCase):
     #        #energies = torch.tensor([0.0]).double()
     #        #_, eneriges_nl = model_nl((species, coordinates), cell=cell, pbc=pbc)
 
-    #@unittest.skipIf(True, '') 
+    # TODO:note that this test fails with single precision!
     def testAEVComputerNLRandom3(self):
         device = torch.device('cuda')
         aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
@@ -306,8 +308,25 @@ class TestCellList(unittest.TestCase):
             _, aev_c = aevc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
             _, aev_j = aevj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
             self.assertTrue(torch.isclose(aev_c, aev_j).all())
-            #energies = torch.tensor([0.0]).double()
-            #_, eneriges_nl = model_nl((species, coordinates), cell=cell, pbc=pbc)
+
+    def testNeighborlistJit(self):
+        device = torch.device('cuda')
+        aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
+        aevc = AEVComputerNL.like_ani1x().to(device).to(torch.double)
+        with torch.jit.fuser('fuser1'):
+            aevj = torch.jit.script(aevj)
+            aevc = torch.jit.script(aevc)
+        #species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
+        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
+        for j in tqdm(range(100)):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(torch.double)*3*self.cell_size
+            coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001)
+
+            pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
+            _, aev_c = aevc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+            _, aev_j = aevj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+            #self.assertTrue(True)
+            #self.assertTrue(torch.isclose(aev_c, aev_j).all())
 
 if __name__ == '__main__':
     unittest.main()
