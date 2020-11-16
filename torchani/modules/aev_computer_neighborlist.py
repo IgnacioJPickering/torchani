@@ -18,8 +18,13 @@ class CellListComputer(torch.nn.Module):
 
     def __init__(self, cutoff, buckets_per_cutoff=1):
         super().__init__()
-        self.register_buffer('cell_diagonal', None)
-        self.scaling_for_flat_index = None
+        self.register_buffer('cell_diagonal', torch.zeros(1))
+        self.register_buffer('total_buckets', torch.zeros(1, dtype=torch.long))
+        self.register_buffer('scaling_for_flat_index', torch.zeros(1, dtype=torch.long))
+        self.register_buffer('shape_buckets_grid', torch.zeros(1, dtype=torch.long))
+        self.register_buffer('vector_idx_to_flat', torch.zeros(1, dtype=torch.long))
+        self.register_buffer('translation_cases', torch.zeros(1, dtype=torch.long))
+        #self.scaling_for_flat_index = None
         # buckets_per_cutoff is also the number of buckets that is scanned in
         # each direction it determines how fine grained the grid is, with
         # respect to the cutoff. This is 2 for amber, but 1 is useful for debug
@@ -132,10 +137,13 @@ class CellListComputer(torch.nn.Module):
         
         # 3) This is needed to scale and flatten last dimension of bucket indices
         # for row major this is (Gy * Gz, Gz, 1)
-        self.scaling_for_flat_index = torch.tensor(
-                     [self.shape_buckets_grid[1] * self.shape_buckets_grid[2],
-                      self.shape_buckets_grid[1], 1],
-                     dtype = torch.long, device = current_device)
+        self.scaling_for_flat_index = torch.ones(3, dtype=torch.long, device=current_device)
+        self.scaling_for_flat_index[0] *= self.shape_buckets_grid[1] * self.shape_buckets_grid[2]
+        self.scaling_for_flat_index[1] *= self.shape_buckets_grid[1]
+        #self.scaling_for_flat_index = torch.tensor(
+        #             [self.shape_buckets_grid[1].item() * self.shape_buckets_grid[2].item(),
+        #              self.shape_buckets_grid[1].item(), one.item()],
+        #             dtype = torch.long, device = current_device)
         
         # 4) create the vector_index -> flat_index conversion tensor
         # it is not really necessary to perform circular padding, 
@@ -293,31 +301,38 @@ class CellListComputer(torch.nn.Module):
     def sort_along_row(x: Tensor, max_value: Tensor, row_for_sorting : int=1) -> Tensor:
         # reorder padded pairs by ordering according to lower part instead of upper
         # based on https://discuss.pytorch.org/t/sorting-2d-tensor-by-pairs-not-columnwise/59465
+        assert row_for_sorting == 1, "Due to JIT issues can only sort along row 1"
         assert x.dim() == 2, "The input must have 2 dimensions"
         assert x.shape[0] == 2, "The inut must be shape (2, ?)"
         assert row_for_sorting == 1 or row_for_sorting == 0
-        if row_for_sorting == 1:
-            aug = x[0, :] + x[1, :] * max_value
-        elif row_for_sorting == 0:
-            aug = x[0, :] * max_value + x[1, :]
-        x = x.index_select(1, stable_sort(aug).indices)
+        # TODO: This code fails due to some JIT error, which prevents sorting along
+        # row 0
+        #if row_for_sorting == 1:
+            #aug = x[0, :] + x[1, :] * max_value
+        #elif row_for_sorting == 0:
+        #    aug = x[0, :] * max_value + x[1, :]
+        aug = x[0, :] + x[1, :] * max_value
+        x = x.index_select(1, stable_sort(aug)[0]) # 0 - indices, 1 - values 
         return x
 
     def get_within_image_pairs(self, flat_bucket_count: Tensor,
             flat_bucket_cumcount: Tensor, max_in_bucket: Tensor) -> Tensor:
         # max_in_bucket = maximum number of atoms contained in any bucket
         current_device = flat_bucket_count.device
+        max_in_bucket = max_in_bucket
 
         # get all indices f that have pairs inside
         # these are A(w) and Ac(w), and withpairs_flat_index is actually f(w)
-        withpairs_flat_index = (flat_bucket_count > 1).nonzero(as_tuple=True)
-        withpairs_flat_bucket_count = flat_bucket_count[withpairs_flat_index]
-        withpairs_flat_bucket_cumcount = flat_bucket_cumcount[withpairs_flat_index]
+        # NOTE: workaround since nonzero(as_tuple=True) is not JITable
+        withpairs_flat_index = (flat_bucket_count > 1).nonzero()
+        withpairs_flat_index = withpairs_flat_index.t().unbind(0)
+        #withpairs_flat_bucket_count = self.dummy(withpairs_flat_index, flat_bucket_count) #flat_bucket_count[withpairs_flat_index]
+        withpairs_flat_bucket_count = flat_bucket_count[withpairs_flat_index[0]] #flat_bucket_count[withpairs_flat_index]
+        withpairs_flat_bucket_cumcount = flat_bucket_cumcount[withpairs_flat_index[0]]
 
         padded_pairs = torch.triu_indices(max_in_bucket, max_in_bucket,
                                           offset = 1,
                                           device = current_device)
-
         padded_pairs = self.sort_along_row(padded_pairs, max_in_bucket, row_for_sorting=1)
         padded_pairs = padded_pairs + withpairs_flat_bucket_cumcount.reshape(-1, 1, 1)
         padded_pairs = padded_pairs.permute(1, 0, 2).reshape(2, -1)
@@ -376,7 +391,7 @@ class CellListComputer(torch.nn.Module):
                 self.to_flat_index(atom_vector_index)
         return atom_vector_index, atom_flat_index
 
-    def get_neighbor_indices(self, atom_vector_index: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
+    def get_neighbor_indices(self, atom_vector_index: Tensor) -> Tuple[Tensor, Tensor]:
         # This is actually pure neighbors, so it doesn't have 
         # "the bucket itself" 
         # These are 
@@ -391,12 +406,15 @@ class CellListComputer(torch.nn.Module):
         atoms = neighbor_vector_indices.shape[1]
         neighbors = neighbor_vector_indices.shape[2]
         neighbor_vector_indices += torch.ones(1, dtype=torch.long, device = atom_vector_index.device)
-        neighbor_vector_indices = neighbor_vector_indices.reshape(-1, 3).unbind(1)
-        neighbor_flat_indices = self.vector_idx_to_flat[neighbor_vector_indices]
-        neighbor_translation_types = self.translation_cases[neighbor_vector_indices]
+        neighbor_vector_indices = neighbor_vector_indices.reshape(-1, 3)
+        #print(neighbor_vector_indices.shape)
+        # TODO: This is needed instead of unbind due to torchscript bug
+        #neighbor_vector_indices = neighbor_vector_indices.unbind(1)
+        neighbor_flat_indices = self.vector_idx_to_flat[neighbor_vector_indices[:, 0], neighbor_vector_indices[:, 1], neighbor_vector_indices[:, 2]]
+        neighbor_translation_types = self.translation_cases[neighbor_vector_indices[:, 0], neighbor_vector_indices[:, 1], neighbor_vector_indices[:, 2]]
         neighbor_translation_types = neighbor_translation_types.reshape(1, atoms, neighbors)
         neighbor_flat_indices = neighbor_flat_indices.reshape(1, atoms, neighbors)
-        return neighbor_vector_indices, neighbor_flat_indices, neighbor_translation_types
+        return neighbor_flat_indices, neighbor_translation_types
 
 
 class AEVComputerNL(AEVComputerJoint):
@@ -417,7 +435,7 @@ class AEVComputerNL(AEVComputerJoint):
     def neighbor_pairs(self, padding_mask: Tensor, coordinates: Tensor, cell: Tensor,
                        shifts: Tensor, cutoff: float) -> Tuple[Tensor, Tensor]:
         assert coordinates.shape[0] == 1
-        assert (padding_mask == False).all()
+        #assert (padding_mask == False).all()
         del shifts
         del padding_mask
         coordinates = coordinates.detach()
@@ -425,7 +443,7 @@ class AEVComputerNL(AEVComputerJoint):
         # padding mask has to be unused for this, also shifts
         # 1) Setup cell parameters, only once for constant V simulations, 
         # every time for variable V, (constant P) simulations
-        if self.constant_volume and self.clist.total_buckets is None:
+        if self.constant_volume and self.clist.total_buckets == 0:
                 shape_buckets_grid, total_buckets =\
                                         self.clist.setup_cell_parameters(cell)
         else:
@@ -440,7 +458,6 @@ class AEVComputerNL(AEVComputerJoint):
         # shape C x A this gives f(a), the flat bucket idx for atom a
         atom_vector_index, atom_flat_index =\
                                 self.clist.get_bucket_indices(fractional_coordinates)
-        torch.set_printoptions(precision=15)
         # 4) get image_indices -> atom_indices and inverse mapping
         # NOTE: there is not necessarily a requirement to do this here
         # both shape A, a(i) and i(a)
@@ -471,9 +488,8 @@ class AEVComputerNL(AEVComputerJoint):
         # neighbor_translation_types 
         # has the type of shift for T(a, n), atom a, 
         # neighbor bucket n
-        neighbor_vector_indices, neighbor_flat_indices, neighbor_translation_types =\
+        neighbor_flat_indices, neighbor_translation_types =\
                 self.clist.get_neighbor_indices(atom_vector_index)
-
         neighbor_count = flat_bucket_count[neighbor_flat_indices] 
         neighbor_cumcount = flat_bucket_cumcount[neighbor_flat_indices]
         neighborhood_count = neighbor_count.sum(-1).squeeze() 
