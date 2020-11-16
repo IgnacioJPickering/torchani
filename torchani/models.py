@@ -34,6 +34,7 @@ from torch import Tensor
 from typing import Tuple, Optional
 from .nn import SpeciesConverter, SpeciesEnergies
 from .aev import AEVComputer
+from .modules import AEVComputerNL
 
 
 class BuiltinModel(torch.nn.Module):
@@ -135,6 +136,41 @@ class BuiltinModel(torch.nn.Module):
         from . import ase
         return ase.Calculator(self.species, self, **kwargs)
 
+class BuiltinModelNL(BuiltinModel):
+
+    @classmethod
+    def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False, model_index=0):
+        from . import neurochem  # noqa
+
+        # this is used to load only 1 model (by default model 0)
+        const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
+        if (model_index >= ensemble_size):
+            raise ValueError("The ensemble size is only {}, model {} can't be loaded".format(ensemble_size, model_index))
+
+        consts = neurochem.Constants(const_file)
+        species_converter = SpeciesConverter(consts.species)
+        aev_computer = AEVComputerNL(**consts, constant_volume=True)
+        energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
+        species_to_tensor = consts.species_to_tensor
+
+        network_dir = os.path.join('{}{}'.format(ensemble_prefix, model_index), 'networks')
+        neural_networks = neurochem.load_model(consts.species, network_dir)
+
+        return cls(species_converter, aev_computer, neural_networks,
+                   energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index)
+
+    @torch.jit.export
+    def _recast_long_buffers(self):
+        self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
+        self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
+        self.aev_computer.clist.total_buckets = self.aev_computer.clist.total_buckets.to(dtype=torch.long)
+        self.aev_computer.clist.scaling_for_flat_index = self.aev_computer.clist.scaling_for_flat_index.to(dtype=torch.long)
+        self.aev_computer.clist.shape_buckets_grid = self.aev_computer.clist.shape_buckets_grid.to(dtype=torch.long)
+        self.aev_computer.clist.vector_idx_to_flat = self.aev_computer.clist.vector_idx_to_flat.to(dtype=torch.long)
+        self.aev_computer.clist.translation_cases = self.aev_computer.clist.translation_cases.to(dtype=torch.long)
+        self.aev_computer.clist.vector_index_displacement = self.aev_computer.clist.vector_index_displacement.to(dtype=torch.long)
+        self.aev_computer.clist.translation_displacement_indices = self.aev_computer.clist.translation_displacement_indices.to(dtype=torch.long)
+
 
 class BuiltinEnsemble(BuiltinModel):
     """Private template for the builtin ANI ensemble models.
@@ -226,8 +262,39 @@ class BuiltinEnsemble(BuiltinModel):
         """
         return len(self.neural_networks)
 
+class BuiltinEnsembleNL(BuiltinEnsemble):
 
-def ANI1x(periodic_table_index=False, model_index=None):
+    @classmethod
+    def _from_neurochem_resources(cls, info_file_path, periodic_table_index=False):
+        from . import neurochem  # noqa
+        # this is used to load only 1 model (by default model 0)
+        const_file, sae_file, ensemble_prefix, ensemble_size = neurochem.parse_neurochem_resources(info_file_path)
+
+        consts = neurochem.Constants(const_file)
+        species_converter = SpeciesConverter(consts.species)
+        aev_computer = AEVComputerNL(**consts, constant_volume=True)
+        energy_shifter, sae_dict = neurochem.load_sae(sae_file, return_dict=True)
+        species_to_tensor = consts.species_to_tensor
+        neural_networks = neurochem.load_model_ensemble(consts.species,
+                                                        ensemble_prefix, ensemble_size)
+
+        return cls(species_converter, aev_computer, neural_networks,
+                   energy_shifter, species_to_tensor, consts, sae_dict, periodic_table_index)
+
+    @torch.jit.export
+    def _recast_long_buffers(self):
+        self.species_converter.conv_tensor = self.species_converter.conv_tensor.to(dtype=torch.long)
+        self.aev_computer.triu_index = self.aev_computer.triu_index.to(dtype=torch.long)
+        self.aev_computer.clist.total_buckets = self.aev_computer.clist.total_buckets.to(dtype=torch.long)
+        self.aev_computer.clist.scaling_for_flat_index = self.aev_computer.clist.scaling_for_flat_index.to(dtype=torch.long)
+        self.aev_computer.clist.shape_buckets_grid = self.aev_computer.clist.shape_buckets_grid.to(dtype=torch.long)
+        self.aev_computer.clist.vector_idx_to_flat = self.aev_computer.clist.vector_idx_to_flat.to(dtype=torch.long)
+        self.aev_computer.clist.translation_cases = self.aev_computer.clist.translation_cases.to(dtype=torch.long)
+        self.aev_computer.clist.vector_index_displacement = self.aev_computer.clist.vector_index_displacement.to(dtype=torch.long)
+        self.aev_computer.clist.translation_displacement_indices = self.aev_computer.clist.translation_displacement_indices.to(dtype=torch.long)
+
+
+def ANI1x(periodic_table_index=False, model_index=None, cell_list=False):
     """The ANI-1x model as in `ani-1x_8x on GitHub`_ and `Active Learning Paper`_.
 
     The ANI-1x model is an ensemble of 8 networks that was trained using
@@ -243,11 +310,17 @@ def ANI1x(periodic_table_index=False, model_index=None):
     """
     info_file = 'ani-1x_8x.info'
     if model_index is None:
-        return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index)
-    return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index)
+        if not cell_list:
+            return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index)
+        else:
+            return BuiltinEnsembleNL._from_neurochem_resources(info_file, periodic_table_index)
+
+    if not cell_list:
+        return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index)
+    return BuiltinModelNL._from_neurochem_resources(info_file, periodic_table_index, model_index)
 
 
-def ANI1ccx(periodic_table_index=False, model_index=None):
+def ANI1ccx(periodic_table_index=False, model_index=None, cell_list=False):
     """The ANI-1ccx model as in `ani-1ccx_8x on GitHub`_ and `Transfer Learning Paper`_.
 
     The ANI-1ccx model is an ensemble of 8 networks that was trained
@@ -264,11 +337,17 @@ def ANI1ccx(periodic_table_index=False, model_index=None):
     """
     info_file = 'ani-1ccx_8x.info'
     if model_index is None:
-        return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index)
-    return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index)
+        if not cell_list:
+            return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index)
+        else:
+            return BuiltinEnsembleNL._from_neurochem_resources(info_file, periodic_table_index)
+
+    if not cell_list:
+        return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index)
+    return BuiltinModelNL._from_neurochem_resources(info_file, periodic_table_index, model_index)
 
 
-def ANI2x(periodic_table_index=False, model_index=None):
+def ANI2x(periodic_table_index=False, model_index=None, cell_list=False):
     """The ANI-2x model as in `ANI2x Paper`_ and `ANI2x Results on GitHub`_.
 
     The ANI-2x model is an ensemble of 8 networks that was trained on the
@@ -284,5 +363,11 @@ def ANI2x(periodic_table_index=False, model_index=None):
     """
     info_file = 'ani-2x_8x.info'
     if model_index is None:
-        return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index)
-    return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index)
+        if not cell_list:
+            return BuiltinEnsemble._from_neurochem_resources(info_file, periodic_table_index)
+        else:
+            return BuiltinEnsembleNL._from_neurochem_resources(info_file, periodic_table_index)
+
+    if not cell_list:
+        return BuiltinModel._from_neurochem_resources(info_file, periodic_table_index, model_index)
+    return BuiltinModelNL._from_neurochem_resources(info_file, periodic_table_index, model_index)

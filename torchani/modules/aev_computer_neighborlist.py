@@ -7,7 +7,8 @@ from torch import Tensor
 from .aev_computer_joint import AEVComputerJoint
 # these are needed due to pytorch's default sort and argsort being 
 # unstable (don't preserve order)
-from .workarounds import stable_sort, stable_argsort
+# TODO: I don't think these are needed
+# from .workarounds import stable_sort, stable_argsort
 
 def cumsum_from_zero(input_: Tensor) -> Tensor:
     cumsum = torch.zeros_like(input_)
@@ -24,6 +25,10 @@ class CellListComputer(torch.nn.Module):
         self.register_buffer('shape_buckets_grid', torch.zeros(1, dtype=torch.long))
         self.register_buffer('vector_idx_to_flat', torch.zeros(1, dtype=torch.long))
         self.register_buffer('translation_cases', torch.zeros(1, dtype=torch.long))
+        self.register_buffer('vector_index_displacement', torch.zeros(1, dtype=torch.long))
+        self.register_buffer('translation_displacement_indices', torch.zeros(1, dtype=torch.long))
+        self.register_buffer('translation_displacements', torch.zeros(1))
+        self.register_buffer('bucket_length_lower_bound', torch.zeros(1))
         #self.scaling_for_flat_index = None
         # buckets_per_cutoff is also the number of buckets that is scanned in
         # each direction it determines how fine grained the grid is, with
@@ -69,7 +74,7 @@ class CellListComputer(torch.nn.Module):
                                                        [-1, -1, -1], 
                                                        [0, -1, -1], 
                                                        [1, -1, -1]])
-        self.register_buffer('vector_index_displacement', vector_index_displacement)
+        self.vector_index_displacement = vector_index_displacement
         # these are the translation displacement indices, used to displace the 
         # image atoms
         assert self.vector_index_displacement.shape == torch.Size([13, 3])
@@ -85,11 +90,10 @@ class CellListComputer(torch.nn.Module):
         translation_displacement_indices =\
         torch.cat((torch.tensor([[0, 0, 0]]),
             self.vector_index_displacement, extra_translation_displacements), dim=0)
-
-        self.register_buffer('translation_displacement_indices', translation_displacement_indices)
+        self.translation_displacement_indices = translation_displacement_indices
 
         translation_displacements = torch.zeros_like(self.translation_displacement_indices)
-        self.register_buffer('translation_displacements', translation_displacements)
+        self.translation_displacements = translation_displacements
         assert self.translation_displacements.shape == torch.Size([18, 3])
         assert self.translation_displacement_indices.shape == torch.Size([18, 3])
 
@@ -204,7 +208,7 @@ class CellListComputer(torch.nn.Module):
         # it is only a lower bound used to calculate the grid size
         spherical_factor = torch.ones(3, dtype=torch.double)
         bucket_length_lower_bound = (spherical_factor * self.cutoff / self.buckets_per_cutoff) + extra_space
-        self.register_buffer('bucket_length_lower_bound', bucket_length_lower_bound)
+        self.bucket_length_lower_bound = bucket_length_lower_bound
 
     def to_flat_index(self, x: Tensor) -> Tensor:
         # Converts a tensor with bucket indices in the last dimension to a
@@ -278,8 +282,10 @@ class CellListComputer(torch.nn.Module):
         # imidx_from_atidx returns tensors that convert image indices into atom
         # indices and viceversa
         # move to device necessary? not sure
-        atidx_from_imidx  = stable_argsort(x.squeeze()).to(x.device)
-        imidx_from_atidx = stable_argsort(atidx_from_imidx).to(x.device)
+        #atidx_from_imidx  = stable_argsort(x.squeeze()).to(x.device)
+        #imidx_from_atidx = stable_argsort(atidx_from_imidx).to(x.device)
+        atidx_from_imidx  = torch.argsort(x.squeeze()).to(x.device)
+        imidx_from_atidx = torch.argsort(atidx_from_imidx).to(x.device)
         return imidx_from_atidx, atidx_from_imidx
 
     def get_atoms_in_flat_bucket_counts(self, atom_flat_index: Tensor) -> Tuple[Tensor, Tensor, Tensor]:
@@ -312,7 +318,8 @@ class CellListComputer(torch.nn.Module):
         #elif row_for_sorting == 0:
         #    aug = x[0, :] * max_value + x[1, :]
         aug = x[0, :] + x[1, :] * max_value
-        x = x.index_select(1, stable_sort(aug)[0]) # 0 - indices, 1 - values 
+        #x = x.index_select(1, stable_sort(aug)[0]) # 0 - indices, 1 - values 
+        x = x.index_select(1, torch.sort(aug).indices) # 0 - indices, 1 - values 
         return x
 
     def get_within_image_pairs(self, flat_bucket_count: Tensor,
@@ -334,9 +341,16 @@ class CellListComputer(torch.nn.Module):
                                           offset = 1,
                                           device = current_device)
         padded_pairs = self.sort_along_row(padded_pairs, max_in_bucket, row_for_sorting=1)
+        # shape (2, pairs) + shape (withpairs, 1, 1) = shape (withpairs, 2, pairs)
         padded_pairs = padded_pairs + withpairs_flat_bucket_cumcount.reshape(-1, 1, 1)
+        # basically this repeats the padded pairs "withpairs" times and adds to all of
+        # them the cumulative counts
+        # now we unravel all pairs, which remain in the correct order in the
+        # second row (the order within same numbers in the first row is actually 
+        # not essential)
         padded_pairs = padded_pairs.permute(1, 0, 2).reshape(2, -1)
-
+        
+        # this code is very confusing, but it gets the job done somehow
         max_pairs_in_bucket = max_in_bucket * (max_in_bucket - 1) // 2
         mask = torch.arange(0, max_pairs_in_bucket, device = current_device)
         num_buckets_with_pairs = len(withpairs_flat_index[0])
@@ -407,7 +421,6 @@ class CellListComputer(torch.nn.Module):
         neighbors = neighbor_vector_indices.shape[2]
         neighbor_vector_indices += torch.ones(1, dtype=torch.long, device = atom_vector_index.device)
         neighbor_vector_indices = neighbor_vector_indices.reshape(-1, 3)
-        #print(neighbor_vector_indices.shape)
         # TODO: This is needed instead of unbind due to torchscript bug
         #neighbor_vector_indices = neighbor_vector_indices.unbind(1)
         neighbor_flat_indices = self.vector_idx_to_flat[neighbor_vector_indices[:, 0], neighbor_vector_indices[:, 1], neighbor_vector_indices[:, 2]]
@@ -461,6 +474,12 @@ class AEVComputerNL(AEVComputerJoint):
         # 4) get image_indices -> atom_indices and inverse mapping
         # NOTE: there is not necessarily a requirement to do this here
         # both shape A, a(i) and i(a)
+        # TODO: watch out, if sorting is not stable this may scramble the atoms
+        # in the same box, so that the atidx you get after applying
+        # atidx_from_imidx[something] will not necessarily be the correct order
+        # but since what we want is the pairs this should in principle be fine, 
+        # since the pairs are agnostic to species. In any case it would definitely 
+        # be safer to use a stable sorting algorithm
         imidx_from_atidx, atidx_from_imidx = self.clist.get_imidx_converters(
                                                         atom_flat_index)
     

@@ -202,7 +202,9 @@ class AEVComputerJoint(torch.nn.Module):
     
         fcj12 = self.cutoff_cosine(distances12, Rca)
         factor1 = ((1 + torch.cos(angles - ShfZ)) / 2) ** Zeta
-        factor2 = torch.exp(-EtaA * (distances12.sum(0) / 2 - ShfA) ** 2)
+        # TODO: Use x * x to avoid torchscript bug 
+        e = (distances12.sum(0) / 2 - ShfA)
+        factor2 = torch.exp(-EtaA * e* e)
         ret = 2 * factor1 * factor2 * fcj12.prod(0)
         # At this point, ret now has shape
         # (conformations x atoms, ?, ?, ?) where ? depend on constants.
@@ -228,7 +230,8 @@ class AEVComputerJoint(torch.nn.Module):
         # Note that in the equation in the paper there is no 0.25
         # coefficient, but in NeuroChem there is such a coefficient.
         # We choose to be consistent with NeuroChem instead of the paper here.
-        ret = 0.25 * torch.exp(-EtaR * (distances - ShfR)**2) * fc
+        # TODO: use x*x to avoid torchscript bug
+        ret = 0.25 * torch.exp(-EtaR * (distances - ShfR)*(distances - ShfR)) * fc
         # At this point, ret now has shape
         # (conformations x atoms, ?, ?) where ? depend on constants.
         # We then should flat the last 2 dimensions to view the subAEV as a two
@@ -251,10 +254,14 @@ class AEVComputerJoint(torch.nn.Module):
         sorted_ai1, rev_indices = ai1.sort()
     
         # sort and compute unique key
-        uniqued_central_atom_index, counts = torch.unique_consecutive(sorted_ai1, return_inverse=False, return_counts=True)
+        out = torch.unique_consecutive(sorted_ai1, return_inverse=False, return_counts=True)
+        counts = out[1]
+        uniqued_central_atom_index = out[0]
     
         # compute central_atom_index
-        pair_sizes = counts * (counts - 1) // 2
+        one = torch.ones(1, dtype=torch.long, device=atom_index12.device)
+        counts_less_one = counts - one
+        pair_sizes = counts * counts_less_one // 2
         pair_indices = torch.repeat_interleave(pair_sizes)
         central_atom_index = uniqued_central_atom_index.index_select(0, pair_indices)
     

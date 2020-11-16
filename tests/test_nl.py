@@ -127,7 +127,8 @@ class TestCellList(unittest.TestCase):
         self.assertTrue(within.shape == torch.Size([2, 27]))
         self.assertTrue((within[0] == torch.arange(0, 54, 2)).all())
         self.assertTrue((within[1] == torch.arange(1, 55, 2)).all())
-    
+
+    @unittest.skipIf(True, 'This tests depends on order and torchs sort algorithm is not stable') 
     def testBetween(self):
         clist = self.clist
         clist.setup_cell_parameters(self.cell)
@@ -150,8 +151,6 @@ class TestCellList(unittest.TestCase):
         compare_between_upper1 = torch.ones(14, dtype=torch.long) * 52
         # TODO I need new comparisons for these
         #compare_between_upper2 = torch.ones(14, dtype=torch.long) * 53
-        print(between[0][-14:])
-        print(compare_between_upper1)
         self.assertTrue((between[0][-14:] == compare_between_upper1).all())
         #self.assertTrue((between[0][-28:-14] == compare_between_upper2).all())
         #self.assertTrue((between[1][-14:] == compare_between_lower).all())
@@ -299,7 +298,7 @@ class TestCellList(unittest.TestCase):
         device = torch.device('cuda')
         aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
         aevc = AEVComputerNL.like_ani1x().to(device).to(torch.double)
-        species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
+        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
         for j in tqdm(range(100)):
             coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(torch.double)*3*self.cell_size
             coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001)
