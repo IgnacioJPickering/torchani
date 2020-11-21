@@ -154,22 +154,6 @@ class AEVComputerJoint(torch.nn.Module):
             torch.cartesian_prod(r1,  -r2, -r3),
         ])
 
-        #return torch.cat([
-        #    torch.cartesian_prod(r1, r2, r3),
-        #    torch.cartesian_prod(r1, r2, o),
-        #    torch.cartesian_prod(r1, r2, -r3),
-        #    torch.cartesian_prod(r1, o, r3),
-        #    torch.cartesian_prod(r1, o, o),
-        #    torch.cartesian_prod(r1, o, -r3),
-        #    torch.cartesian_prod(r1, -r2, r3),
-        #    torch.cartesian_prod(r1, -r2, o),
-        #    torch.cartesian_prod(r1, -r2, -r3),
-        #    torch.cartesian_prod(o, r2, r3),
-        #    torch.cartesian_prod(o, r2, o),
-        #    torch.cartesian_prod(o, r2, -r3),
-        #    torch.cartesian_prod(o, o, r3),
-        #])
-
     def sizes(self) -> Tuple[int, int, int, int, int]:
         return self.num_species.item(), self.radial_sublength.item(), self.radial_length.item(), self.angular_sublength.item(), self.angular_length.item()
     
@@ -426,7 +410,10 @@ class AEVComputerJoint(torch.nn.Module):
                        radial_eta = None, angular_eta = None,
                        radial_dist_divisions=16, angular_dist_divisions=4,
                        zeta=32.0, angle_sections=8, num_species=4,
-                       angular_start: float = 0.9, radial_start: float = 0.9, logspace=False, sync_spacings=False, radial_sigma = None, angular_sigma = None, unique_etas=True, adapt_etas=False,
+                       angular_start: float = 0.9, radial_start: float = 0.9,
+                       logspace=False, sync_spacings=False, radial_sigma = None,
+                       angular_sigma = None, unique_etas=True,
+                       adapt_etas=False,
                        trainable_zeta=False, trainable_etas=False,
                        trainable_radial_shifts=False,
                        trainable_angular_shifts=False,

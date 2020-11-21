@@ -29,7 +29,6 @@ class CellListComputer(torch.nn.Module):
         self.register_buffer('translation_displacement_indices', torch.zeros(1, dtype=torch.long))
         self.register_buffer('translation_displacements', torch.zeros(1))
         self.register_buffer('bucket_length_lower_bound', torch.zeros(1))
-        #self.scaling_for_flat_index = None
         # buckets_per_cutoff is also the number of buckets that is scanned in
         # each direction it determines how fine grained the grid is, with
         # respect to the cutoff. This is 2 for amber, but 1 is useful for debug
@@ -247,10 +246,13 @@ class CellListComputer(torch.nn.Module):
         # which amber does, in order to calculate diffusion coefficients, etc
         fractional_coordinates = fractional_coordinates - torch.floor(fractional_coordinates) 
         # fractional_coordinates should be in the range [0, 1.0)
+        fractional_coordinates[fractional_coordinates >= 1.] -= 1.0
+        fractional_coordinates[fractional_coordinates < 0.] += 1.0
+
         assert (fractional_coordinates < 1.).all(),\
-            f"Some fractional coordinates are too large {fractional_coordinates}"
+            f"Some fractional coordinates are too large {fractional_coordinates[fractional_coordinates >= 1.]}"
         assert (fractional_coordinates >= 0.).all(),\
-            f"Some coordinates are too small {fractional_coordinates}"
+            f"Some coordinates are too small {fractional_coordinates.masked_select(fractional_coordinates < 0.)}"
         return fractional_coordinates
 
     def fractional_to_vector_bucket_indices(self, fractional: Tensor) -> Tensor:
@@ -543,11 +545,9 @@ class AEVComputerNL(AEVComputerJoint):
         num_atoms = coordinates.shape[1]
         selected_coordinates = coordinates.index_select(1,
                 atom_pairs.view(-1)).view(num_mols, 2, -1, 3) 
-        distances = (selected_coordinates[:, 0, ...] -\
-                selected_coordinates[:, 1, ...] + shift_values
-                ).norm(2, -1)
-        in_cutoff = (distances <= cutoff).nonzero()    
-        molecule_index, pair_index = in_cutoff.unbind(1)    
+        distances = (selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...] + shift_values).norm(2, -1)
+        in_cutoff = (distances <= cutoff).nonzero()
+        molecule_index, pair_index = in_cutoff.unbind(1)
         molecule_index *= num_atoms    
         atom_index12 = atom_pairs[:, pair_index]    
         shifts = shift_indices.index_select(0, pair_index)    

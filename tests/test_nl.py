@@ -5,6 +5,7 @@ import pickle
 import torch
 from torchani.modules import AEVComputerNL, CellListComputer, AEVComputerJoint
 from torchani.geometry import tile_into_cube
+import torchani
 from tqdm import tqdm
 
 with open('test_nl_data.pkl', 'rb') as f:
@@ -128,34 +129,6 @@ class TestCellList(unittest.TestCase):
         self.assertTrue((within[0] == torch.arange(0, 54, 2)).all())
         self.assertTrue((within[1] == torch.arange(1, 55, 2)).all())
 
-    @unittest.skipIf(True, 'This tests depends on order and torchs sort algorithm is not stable') 
-    def testBetween(self):
-        clist = self.clist
-        clist.setup_cell_parameters(self.cell)
-        frac = clist.fractionalize_coordinates(self.coordinates)
-        g_a, f_a = clist.get_bucket_indices(frac)
-        i_a, a_i = clist.get_imidx_converters(f_a)
-        A_f, Ac_f, A_star = clist.get_atoms_in_flat_bucket_counts(f_a)
-
-        f_an, S = clist.get_neighbor_indices(g_a)
-        A_an = A_f[f_an]
-        Ac_an = Ac_f[f_an]
-        An_a = A_an.sum(-1).squeeze()
-        upper = torch.repeat_interleave(i_a.squeeze(), An_a)
-        lower, _ = clist.get_lower_between_image_pairs(A_an, Ac_an, A_star, S)
-        between = torch.stack((upper, lower), dim=0)
-        self.assertTrue(between.shape == torch.Size([2, 1404]))
-
-        # some hand comparisons with the between_image indices
-        #compare_between_lower = torch.tensor([26, 27, 28, 29, 32, 33, 34, 35, 44, 45, 46, 47, 50, 51], dtype=torch.long)
-        compare_between_upper1 = torch.ones(14, dtype=torch.long) * 52
-        # TODO I need new comparisons for these
-        #compare_between_upper2 = torch.ones(14, dtype=torch.long) * 53
-        self.assertTrue((between[0][-14:] == compare_between_upper1).all())
-        #self.assertTrue((between[0][-28:-14] == compare_between_upper2).all())
-        #self.assertTrue((between[1][-14:] == compare_between_lower).all())
-        #self.assertTrue((between[1][-28:-14] == compare_between_lower).all())
-
     def testAEVComputerNLInit(self):
         AEVComputerNL.like_ani1x()
 
@@ -243,7 +216,6 @@ class TestCellList(unittest.TestCase):
         species, aevsj = aevj((self.species, self.coordinates), cell=self.cell, pbc=pbc)
         self.assertTrue(torch.isclose(aevs, aevsj).all())
 
-    #@unittest.skipIf(True, '') 
     def testAEVComputerNLRandom(self):
         cut = self.cut
         for j in range(100):
@@ -259,7 +231,6 @@ class TestCellList(unittest.TestCase):
             _, aevsj = aevj((species, coordinates), cell=self.cell, pbc=pbc)
             self.assertTrue(torch.isclose(aevs, aevsj).all())
 
-    #@unittest.skipIf(True, '') 
     def testAEVComputerNLRandom2(self):
         for j in tqdm(range(100)):
             coordinates = torch.randn(10, 3).unsqueeze(0)*3*self.cell_size
@@ -274,26 +245,42 @@ class TestCellList(unittest.TestCase):
             _, aevsj = aevj((species, coordinates), cell=cell, pbc=pbc)
             self.assertTrue(torch.isclose(aevs, aevsj).all())
 
-    #def testAEVComputerNLRandomE(self):
-    #    device = torch.device('cuda')
-    #    aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
-    #    aevc = AEVComputerNL.like_ani1x().to(device).to(torch.double)
-    #    modelj = torchani.models.ANI1x(model_index=0)
-    #    modelj.aev_computer = aevj
-    #    modelc.aev_computer = aevc
-    #    species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
-    #    for j in tqdm(range(10000)):
-    #        coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(torch.double)*3*self.cell_size
-    #        coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001)
+    def testAEVComputerNLRandomE(self):
+        device = torch.device('cuda')
+        aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
+        aevc = AEVComputerNL.like_ani1x().to(device).to(torch.double)
+        modelj = torchani.models.ANI1x(model_index=0).to(device).double()
+        modelc = torchani.models.ANI1x(model_index=0).to(device).double()
+        modelj.aev_computer = aevj
+        modelc.aev_computer = aevc
+        species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
+        for j in tqdm(range(100)):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(torch.double)*3*self.cell_size
+            coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001)
 
-    #        pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
-    #        _, aev_c = aevc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
-    #        _, aev_j = aevj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
-    #        self.assertTrue(torch.isclose(aev_c, aev_j).all())
-    #        #energies = torch.tensor([0.0]).double()
-    #        #_, eneriges_nl = model_nl((species, coordinates), cell=cell, pbc=pbc)
+            pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
+            _, e_c = modelc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+            _, e_j = modelj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+            self.assertTrue(torch.isclose(e_c, e_j).all())
 
-    # TODO:note that this test fails with single precision!
+    def testAEVComputerNLRandomEfloat(self):
+        device = torch.device('cuda')
+        aevj = AEVComputerJoint.like_ani1x().to(device)
+        aevc = AEVComputerNL.like_ani1x().to(device)
+        modelj = torchani.models.ANI1x(model_index=0).to(device)
+        modelc = torchani.models.ANI1x(model_index=0).to(device)
+        modelj.aev_computer = aevj
+        modelc.aev_computer = aevc
+        species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
+        for j in tqdm(range(100)):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(torch.float)*3*self.cell_size
+            coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001).float()
+
+            pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
+            _, e_c = modelc((species, coordinates), cell=self.cell.to(device).float(), pbc=pbc)
+            _, e_j = modelj((species, coordinates), cell=self.cell.to(device).float(), pbc=pbc)
+            self.assertTrue(torch.isclose(e_c, e_j).all())
+
     def testAEVComputerNLRandom3(self):
         device = torch.device('cuda')
         aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
@@ -308,14 +295,36 @@ class TestCellList(unittest.TestCase):
             _, aev_j = aevj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
             self.assertTrue(torch.isclose(aev_c, aev_j).all())
 
+    # TODO:note that this test fails with single precision!
+    @unittest.skipIf(True, '')
+    def testAEVComputerNLRandom3float(self):
+        device = torch.device('cuda')
+        aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.float)
+        aevc = AEVComputerNL.like_ani1x().to(device).to(torch.float)
+        species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
+        for j in tqdm(range(100)):
+            coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(torch.float)*3*self.cell_size
+            coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001)
+
+            pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
+            _, aev_c = aevc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+            _, aev_j = aevj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+            self.assertTrue(torch.isclose(aev_c, aev_j).all())
+
     def testNeighborlistJit(self):
+        # TODO many JIT optimizations break the code so I turn every
+        # optimization off until pytorch fixes them
+        torch._C._jit_set_profiling_executor(False)
+        torch._C._jit_set_profiling_mode(False)
+        torch._C._jit_override_can_fuse_on_cpu(False)
+        torch._C._jit_set_texpr_fuser_enabled(False)
+        torch._C._jit_set_nvfuser_enabled(False)
         device = torch.device('cuda')
         aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
         aevc = AEVComputerNL.like_ani1x().to(device).to(torch.double)
         with torch.jit.fuser('fuser1'):
             aevj = torch.jit.script(aevj)
             aevc = torch.jit.script(aevc)
-        #species = torch.zeros(100).unsqueeze(0).to(torch.long).to(device)
         species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
         for j in tqdm(range(100)):
             coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(torch.double)*3*self.cell_size
@@ -324,8 +333,7 @@ class TestCellList(unittest.TestCase):
             pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
             _, aev_c = aevc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
             _, aev_j = aevj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
-            #self.assertTrue(True)
-            #self.assertTrue(torch.isclose(aev_c, aev_j).all())
+            self.assertTrue(torch.isclose(aev_c, aev_j).all())
 
 if __name__ == '__main__':
     unittest.main()
