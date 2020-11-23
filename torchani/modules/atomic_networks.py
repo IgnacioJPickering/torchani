@@ -1,5 +1,6 @@
 """Contains different versions of the main ANIModel module"""
 import torch
+import copy
 from .residual_blocks import ResidualBlock, FixupBlock
 
 
@@ -37,16 +38,18 @@ class AtomicNetworkClassic(torch.nn.Module):
             activation = torch.nn.CELU(0.1)
 
         # automatically insert the first dimension
-        dims.insert(0, dim_in)
-        dimensions = range(len(dims) - 1)
+        dims_ = copy.deepcopy(dims)
+        dims_.insert(0, dim_in)
+        dimensions = range(len(dims_) - 1)
         layers = []
         for j in dimensions:
             layers.append(
-                torch.nn.Linear(dims[j], dims[j + 1], bias=other_layers_bias))
+                torch.nn.Linear(dims_[j], dims_[j + 1], bias=other_layers_bias))
             layers.append(activation)
         # final layer is always appended
-        layers.append(torch.nn.Linear(dims[-1], 1, bias=final_layer_bias))
+        layers.append(torch.nn.Linear(dims_[-1], 1, bias=final_layer_bias))
         self.sequential = torch.nn.Sequential(*layers)
+        assert len(layers) == (len(dims_)-1)*2 + 1
 
         # the inputs can be standarized if needed, with the mean and standard
         # deviation of the aev
@@ -311,19 +314,21 @@ class AtomicNetworkResidualV2(torch.nn.Module):
         # make dimensions match automatically, insert the input dimension as
         # first dimension of the shared layers, and the last dimension of the
         # shared layers as the first dimension of the specific layers
-        dims_shared.insert(0, dim_in)
-        dims_specific.insert(0, dims_shared[-1])
+        dims_shared_ = copy.deepcopy(dims_shared)
+        dims_specific_ = copy.deepcopy(dims_specific)
+        dims_shared_.insert(0, dim_in)
+        dims_specific_.insert(0, dims_shared_[-1])
         
         # total residual blocks
-        self.L = len(dims_shared) // 2 + len(dims_specific) // 2
+        self.L = len(dims_shared_) // 2 + len(dims_specific_) // 2
         if fixup:
             assert not batch_norm
 
 
         # shared layers get put into a Sequential module
-        self.residuals_shared = self._make_residual_layers(dims_shared, celu_alpha, batch_norm, fixup=fixup, L=self.L)
-        self.residuals_ground = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=1, fixup=fixup, L=self.L)
-        self.residuals_ex = self._make_residual_layers(dims_specific, celu_alpha, batch_norm, collapse_to=num_outputs-1, fixup=fixup, L=self.L)
+        self.residuals_shared = self._make_residual_layers(dims_shared_, celu_alpha, batch_norm, fixup=fixup, L=self.L)
+        self.residuals_ground = self._make_residual_layers(dims_specific_, celu_alpha, batch_norm, collapse_to=1, fixup=fixup, L=self.L)
+        self.residuals_ex = self._make_residual_layers(dims_specific_, celu_alpha, batch_norm, collapse_to=num_outputs-1, fixup=fixup, L=self.L)
 
     @staticmethod
     def _make_residual_layers(dims, celu_alpha, batch_norm, collapse_to=None, fixup=False, L=0, silu=False, gelu=False):
@@ -379,8 +384,6 @@ class AtomicNetworkPlusScalar(AtomicNetworkResidualV2):
         outputs = torch.cat((energy, ex), dim=-1)
         return outputs, mags
 
-    
-
 
 class AtomicNetworkSpecFlexMultiple(torch.nn.Module):
     """custom atomic network with residual connections, many specific features"""
@@ -404,9 +407,11 @@ class AtomicNetworkSpecFlexMultiple(torch.nn.Module):
         # make dimensions match automatically, insert the input dimension as
         # first dimension of the shared layers, and the last dimension of the
         # shared layers as the first dimension of the specific layers
-        dims_shared.insert(0, dim_in)
-        if dims_specific:
-            dims_specific.insert(0, dims_shared[-1])
+        dims_shared_ = copy.deepcopy(dims_shared)
+        dims_specific_ = copy.deepcopy(dims_specific)
+        dims_shared_.insert(0, dim_in)
+        if dims_specific_:
+            dims_specific_.insert(0, dims_shared_[-1])
 
         # if dims_specific is empty then the specific layer is just one linear
         # layer, which amounts to vector dot product, or multiplying all
@@ -420,13 +425,13 @@ class AtomicNetworkSpecFlexMultiple(torch.nn.Module):
         self.register_buffer('factors', factors)
         assert len(self.factors) == num_outputs
 
-        range_shared = range(len(dims_shared) - 1)
-        if dims_specific:
+        range_shared = range(len(dims_shared_) - 1)
+        if dims_specific_:
             range_specific = range(len(dims_specific) - 1)
 
         # shared layers get put into a Sequential module
-        residuals_shared = (ResidualBlock(dims_shared[j],
-                                          dims_shared[j + 1],
+        residuals_shared = (ResidualBlock(dims_shared_[j],
+                                          dims_shared_[j + 1],
                                           celu_alpha=celu_alpha,
                                           batch_norm=batch_norm)
                             for j in range_shared)
@@ -435,20 +440,20 @@ class AtomicNetworkSpecFlexMultiple(torch.nn.Module):
         # specific layers
         output_modules = []
         for j in range(num_outputs):
-            if dims_specific:
+            if dims_specific_:
                 residuals_specific = [
-                    ResidualBlock(dims_specific[j],
-                                  dims_specific[j + 1],
+                    ResidualBlock(dims_specific_[j],
+                                  dims_specific_[j + 1],
                                   batch_norm=batch_norm)
                     for j in range_specific
                 ]
                 residuals_specific.append(
-                    torch.nn.Linear(dims_specific[-1],
+                    torch.nn.Linear(dims_specific_[-1],
                                     1,
                                     bias=final_layer_bias))
             else:
                 residuals_specific = [
-                    torch.nn.Linear(dims_shared[-1], 1, bias=final_layer_bias)
+                    torch.nn.Linear(dims_shared_[-1], 1, bias=final_layer_bias)
                 ]
             # the last one is always a linear layer that ends on 1
 
