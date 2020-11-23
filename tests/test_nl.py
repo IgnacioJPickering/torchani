@@ -322,17 +322,21 @@ class TestCellList(unittest.TestCase):
         device = torch.device('cuda')
         aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
         aevc = AEVComputerNL.like_ani1x().to(device).to(torch.double)
-        with torch.jit.fuser('fuser1'):
-            aevj = torch.jit.script(aevj)
-            aevc = torch.jit.script(aevc)
+        aevj = torch.jit.script(aevj)
+        aevc = torch.jit.script(aevc)
         species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
         for j in tqdm(range(100)):
             coordinates = torch.randn(100, 3).unsqueeze(0).to(device).to(torch.double)*3*self.cell_size
             coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001)
 
             pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
-            _, aev_c = aevc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
-            _, aev_j = aevj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+            coordinates.requires_grad_(True)
+            _, aev_c = aevc((species, coordinates.double()), cell=self.cell.to(device).double(), pbc=pbc)
+            _ = -torch.autograd.grad(aev_c.sum(), coordinates)[0]
+
+            coordinates.requires_grad_(True)
+            _, aev_j = aevj((species, coordinates.double()), cell=self.cell.to(device).double(), pbc=pbc)
+            _ = -torch.autograd.grad(aev_j.sum(), coordinates)[0]
             self.assertTrue(torch.isclose(aev_c, aev_j).all())
 
 if __name__ == '__main__':

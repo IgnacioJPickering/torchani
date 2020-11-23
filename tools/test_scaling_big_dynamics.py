@@ -7,7 +7,10 @@ from time import time
 import copy
 import math
 import pickle # noqa
+from pytorch_memlab import profile
+
 double = True
+profile_memory = True
 device = torch.device('cuda')
 model = torchani.models.ANI1x(model_index=0, periodic_table_index=True).to(device)
 aevc = AEVComputerNL.like_ani1x().to(device)
@@ -16,6 +19,7 @@ model.aev_computer = aevc
 string = 'dp_times_sizes_old'
 if double:
     model = model.double()
+
 
 timers = dict()
 def time_func(key, func):
@@ -31,18 +35,20 @@ def time_func(key, func):
         return ret
     return wrapper
 
-def time_functions_in_object(object_, function_names_list):
+def profile_functions_in_object(object_, function_names_list):
     # Wrap all the functions from "function_names_list" from the module
     # "module" with a timer
+    if profile_memory:
+        for n in function_names_list:
+            setattr(object_, n, profile(getattr(object_, n)))
     for n in function_names_list:
         setattr(object_, n, time_func(f'{n}', getattr(object_, n)))
 
-functions = ['neighbor_pairs']
-functions_to_time = ['cutoff_cosine', 'radial_terms', 'angular_terms',
-                     'compute_shifts', 'neighbor_pairs',
-                     'neighbor_pairs_nopbc', 'cumsum_from_zero',
+
+functions_to_profile = ['cutoff_cosine', 'radial_terms', 'angular_terms',
+                     'compute_shifts', 'neighbor_pairs', 'cumsum_from_zero',
                      'triple_by_molecule', 'compute_aev']
-time_functions_in_object(model.aev_computer, functions_to_time)
+profile_functions_in_object(model.aev_computer, functions_to_profile)
 
 def make_water(device=None, eq_bond = 0.957582):
     d = eq_bond
@@ -60,21 +66,16 @@ times = []
 sizes = []
 # 59 for the other
 times_functions = []
+# 34 for density 01
+# 27 for 0.2
+# 24 for 0.3
 
-for r in tqdm(range(2, 34)):
+for r in tqdm(range(3, 34)):
     cut = 5.2
     species, coordinates = make_water(device)
-    #species = torch.zeros(4).unsqueeze(0).to(torch.long).to(device)
-    #coordinates = torch.randn(4, 3).unsqueeze(0).to(device)*(cut - 0.001)
-    #species, coordinates = tile_into_cube((species, coordinates), box_length=5.1, repeats=r)
     species, coordinates, cell = tile_into_tight_cell((species, coordinates),
                                                 noise=0.1,
                                                 repeats=r, density=0.1)
-    #cell_size = cut*r + 0.1
-    #eps = 1e-5 
-    #coordinates = torch.clamp(coordinates, min=eps, max=cell_size - eps)
-    #cell = torch.diag(torch.tensor([cell_size, cell_size, cell_size])).float().to(device)
-
     pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
     coordinates.requires_grad_(True)
     start = time()
