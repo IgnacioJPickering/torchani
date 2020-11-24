@@ -194,16 +194,18 @@ class Trainer:
                     self.step += 1
 
             # I register hooks in here
-            for element, network in model.neural_networks.items():
+            for element, network in self.model.neural_networks.items():
                 for layer in network.children():
                     for p_name, p in layer.named_parameters():
                         # this registers a backward hook on the tensors
                         p.register_hook(GradLogger(self.tensorboard_large, f'{element}/grad/{p_name}', total_batches=total_batches, times_per_epoch=5))
         # end hooks
 
-        if self.verbose: print(f"Training starting from epoch"
+        if self.verbose: 
+            print(f"Training starting from epoch"
                                f" {self.lr_scheduler.last_epoch + 1}\n"
                                f"Dataset has {total_batches} batches")
+            print(self.model)
 
         # avoid stupidity (?) in data
         if isinstance(training, data.TransformableIterable):
