@@ -55,8 +55,11 @@ class Trainer:
         # Tensorboard logging, allow toggle
         if output_paths.tensorboard is not None:
             self.tensorboard = torch.utils.tensorboard.SummaryWriter(output_paths.tensorboard.as_posix())
+            # large files with histograms are stored separately 
+            self.tensorboard_large = torch.utils.tensorboard.SummaryWriter(output_paths.tensorboard.joinpath('large/').as_posix())
         else:
             self.tensorboard = None
+
         
     def ground_state_loop(self, batch_number, conformation):
        species = conformation['species'].to(self.device, non_blocking=True)
@@ -148,7 +151,10 @@ class Trainer:
         else:
             return loss, losses
 
-    def train(self, datasets, use_tqdm=False, max_epochs=maxsize, early_stopping_lr=0.0, loop='ground_state_loop', log_every_batch=False, foscs_only=False, sqdipoles_only=False, limited_memory=False):
+    def train(self, datasets, use_tqdm=False, max_epochs=maxsize,
+            early_stopping_lr=0.0, loop='ground_state_loop',
+            log_every_batch=False, foscs_only=False, sqdipoles_only=False,
+            limited_memory=False, log_gradients=False):
         self.foscs_only = foscs_only
         self.sqdipoles_only = sqdipoles_only
         self.log_every_batch = log_every_batch
@@ -172,6 +178,29 @@ class Trainer:
             self.log_per_epoch(main_metric, metrics=metrics)
         
         total_batches = len(training) 
+
+        # register hooks
+        if log_gradients:
+            class GradLogger:
+                def __init__(self, tb, key, total_batches, times_per_epoch=5):
+                    self.tb = tb
+                    self.key = key
+                    self.step = 1
+                    self.every = total_batches//times_per_epoch
+
+                def __call__(self, grad):
+                    if self.step % self.every == 0:
+                        self.tb.add_histogram(self.key, grad, global_step=self.step, bins='auto')
+                    self.step += 1
+
+            # I register hooks in here
+            for element, network in model.neural_networks.items():
+                for layer in network.children():
+                    for p_name, p in layer.named_parameters():
+                        # this registers a backward hook on the tensors
+                        p.register_hook(GradLogger(self.tensorboard_large, f'{element}/grad/{p_name}', total_batches=total_batches, times_per_epoch=5))
+        # end hooks
+
         if self.verbose: print(f"Training starting from epoch"
                                f" {self.lr_scheduler.last_epoch + 1}\n"
                                f"Dataset has {total_batches} batches")
@@ -268,6 +297,39 @@ class Trainer:
             for j, l in enumerate(other):
                 self.tensorboard.add_scalar(f'batch_loss_{j}', l, batch_number)
 
+    def _log_aev_trainable(self, epoch_number):
+        if self.hparams.get('aev_computer/trainable_etas'):
+            for j, v in enumerate(self.model.aev_computer.EtaR):
+                self.tensorboard.add_scalar(f'aev/EtaR_{j}', v, epoch_number)
+            for j, v in enumerate(self.model.aev_computer.EtaA.view(-1)):
+                self.tensorboard.add_scalar(f'aev/EtaA_{j}', v, epoch_number)
+        if self.hparams.get('aev_computer/trainable_shifts') or self.hparams.get('aev_computer/trainable_radial_shifts'):
+            for j, v in enumerate(self.model.aev_computer.ShfR.view(-1)):
+                self.tensorboard.add_scalar(f'aev/ShfR_{j}', v, epoch_number)
+        if self.hparams.get('aev_computer/trainable_shifts') or self.hparams.get('aev_computer/trainable_angular_shifts'):
+            for j, v in enumerate(self.model.aev_computer.ShfA.view(-1)):
+                self.tensorboard.add_scalar(f'aev/ShfA_{j}', v, epoch_number)
+        if self.hparams.get('aev_computer/trainable_shifts') or self.hparams.get('aev_computer/trainable_angle_sections'):
+            for j, v in enumerate(self.model.aev_computer.ShfZ.view(-1)):
+                self.tensorboard.add_scalar(f'aev/ShfZ_{j}', v, epoch_number)
+
+    def _write_csv(self, metrics, epoch_number, epoch_time, main_key, main_value):
+        if not self.output_paths.csv.is_file():
+            with open(self.output_paths.csv, 'w') as f:
+                s = f'{main_key} epoch time lr'
+                if metrics is not None:
+                    for k in metrics.keys():
+                        s += f' {k}'
+                s += '\n'
+                f.write(s)
+        with open(self.output_paths.csv, 'a') as f:
+            s = f'{main_value} {epoch_number} {epoch_time}'
+            if metrics is not None:
+                for v in metrics.values():
+                    s += f' {v}'
+            s += '\n'
+            f.write(s)
+
     def log_per_epoch(self, main_metric, metrics=None, epoch_time=None, loss=None, other_losses=None):
         # Other metrics is a dictionary with different metrics
         (main_key, main_value), = main_metric.items()
@@ -280,20 +342,8 @@ class Trainer:
             self.tensorboard.add_scalar(f'{main_key}', main_value, epoch_number)
             self.tensorboard.add_scalar(f'best_{main_key}', self.lr_scheduler.best, epoch_number)
             self.tensorboard.add_scalar('learning_rate', self.optimizer.param_groups[0]['lr'] , epoch_number)
-            if self.hparams.get('aev_computer/trainable_etas'):
-                for j, v in enumerate(self.model.aev_computer.EtaR):
-                    self.tensorboard.add_scalar(f'aev/EtaR_{j}', v, epoch_number)
-                for j, v in enumerate(self.model.aev_computer.EtaA.view(-1)):
-                    self.tensorboard.add_scalar(f'aev/EtaA_{j}', v, epoch_number)
-            if self.hparams.get('aev_computer/trainable_shifts') or self.hparams.get('aev_computer/trainable_radial_shifts'):
-                for j, v in enumerate(self.model.aev_computer.ShfR.view(-1)):
-                    self.tensorboard.add_scalar(f'aev/ShfR_{j}', v, epoch_number)
-            if self.hparams.get('aev_computer/trainable_shifts') or self.hparams.get('aev_computer/trainable_angular_shifts'):
-                for j, v in enumerate(self.model.aev_computer.ShfA.view(-1)):
-                    self.tensorboard.add_scalar(f'aev/ShfA_{j}', v, epoch_number)
-            if self.hparams.get('aev_computer/trainable_shifts') or self.hparams.get('aev_computer/trainable_angle_sections'):
-                for j, v in enumerate(self.model.aev_computer.ShfZ.view(-1)):
-                    self.tensorboard.add_scalar(f'aev/ShfZ_{j}', v, epoch_number)
+            self._log_aev_trainable(epoch_number)
+
             if metrics is not None:
                 for k, v in metrics.items():
                     self.tensorboard.add_scalar(f'{k}', v, epoch_number)
@@ -301,30 +351,20 @@ class Trainer:
                 for parameter_vector in self.loss_function.parameters():
                     for k, p in enumerate(parameter_vector):
                         self.tensorboard.add_scalar(f'loss_parameter_{k}', epoch_time, epoch_number)
+
             if epoch_time is not None:
                 self.tensorboard.add_scalar('epoch_time', epoch_time, epoch_number)
+
             if loss is not None:
                 self.tensorboard.add_scalar('epoch_loss', loss, epoch_number)
+
             if other_losses is not None:
                 for j, l in enumerate(other_losses):
                     self.tensorboard.add_scalar(f'epoch_loss_{j}', l, epoch_number)
+
         if self.output_paths.csv is not None:
-            if not self.output_paths.csv.is_file():
-                with open(self.output_paths.csv, 'w') as f:
-                    s = f'{main_key} epoch time lr'
-                    if metrics is not None:
-                        for k in metrics.keys():
-                            s += f' {k}'
-                    s += '\n'
-                    f.write(s)
-    
-            with open(self.output_paths.csv, 'a') as f:
-                s = f'{main_value} {epoch_number} {epoch_time}'
-                if metrics is not None:
-                    for v in metrics.values():
-                        s += f' {v}'
-                s += '\n'
-                f.write(s)
+            self._write_csv(metrics, epoch_number, epoch_time, main_key, main_value)
+
 
 def update_random_search_config(config, random_search):
     for parameter, range_ in random_search.items():
@@ -608,4 +648,4 @@ if __name__ == '__main__':
     trainer = Trainer(model, optimizer, lr_scheduler, loss_function, validation_function, output_paths, hparams, other_scheduler=other_scheduler)
     trainer.train(datasets, **config['general'],
             use_tqdm=global_config['use_tqdm'],
-            log_every_batch=global_config['log_every_batch'], limited_memory=global_config['limited_memory'])
+            log_every_batch=global_config['log_every_batch'], limited_memory=global_config['limited_memory'], log_gradients=global_config['log_gradients'])
