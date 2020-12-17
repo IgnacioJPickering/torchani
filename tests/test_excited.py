@@ -116,7 +116,7 @@ class TestAtomicNetworks(unittest.TestCase):
         self.assertTrue(torch.isclose(e, torch.tensor([0.]*outputs, device=device)).all())
         an.apply(reproducible_init_bias)
         e = an(torch.zeros((1, 384), dtype=torch.float, device=device)).squeeze()
-        self.assertTrue(torch.isclose(e, torch.tensor([1.187634085888e+12]*outputs, device=device)).all() )
+        self.assertTrue(torch.isclose(e, torch.tensor([1.275380240e+08]*outputs, device=device)).all() )
 
 
     

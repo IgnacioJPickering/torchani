@@ -243,6 +243,7 @@ class AEVComputerJoint(torch.nn.Module):
         uniqued_central_atom_index = out[0]
     
         # compute central_atom_index
+        # TODO: one avoids TorchScript bug
         one = torch.ones(1, dtype=torch.long, device=atom_index12.device)
         counts_less_one = counts - one
         pair_sizes = counts * counts_less_one // 2
