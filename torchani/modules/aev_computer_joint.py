@@ -561,6 +561,12 @@ class AEVComputerJoint(torch.nn.Module):
     def constants(self):
         return self.Rcr, self.EtaR, self.ShfR, self.Rca, self.ShfZ, self.EtaA, self.Zeta, self.ShfA
 
+    def map2central(self, cell, coordinates, pbc):
+        inv_cell = torch.inverse(cell)
+        coordinates_cell = torch.matmul(coordinates, inv_cell)
+        coordinates_cell -= coordinates_cell.floor() * pbc
+        return torch.matmul(coordinates_cell, cell)
+
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
                 pbc: Optional[Tensor] = None) -> SpeciesAEV:
@@ -610,6 +616,7 @@ class AEVComputerJoint(torch.nn.Module):
         else:
             assert (cell is not None and pbc is not None)
             shifts = self.compute_shifts(cell, pbc, self.cutoff)
+            coordinates = self.map2central(cell, coordinates, pbc)
             aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
 
         return SpeciesAEV(species, aev)
