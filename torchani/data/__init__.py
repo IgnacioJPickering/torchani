@@ -212,9 +212,15 @@ class Transformations:
             Y = numpy.array(Y)
             if ex_key is not None:
                 Yx = numpy.array(Yx)
+                if Yx.shape[0] == 0:
+                    raise RuntimeError("subtract_self_energies could not find any energies in the provided dataset.\n"
+                                   "Please make sure the path provided to data.load() points to a dataset has energies and is not empty or corrupted.")
                 Y_total = numpy.concatenate((Y.reshape(-1, 1), Yx), axis=-1)
                 sae, _, _, _ = numpy.linalg.lstsq(X, Y_total, rcond=None)
             else:
+               if Y.shape[0] == 0:
+                   raise RuntimeError("subtract_self_energies could not find any energies in the provided dataset.\n"
+                                   "Please make sure the path provided to data.load() points to a dataset has energies and is not empty or corrupted.")
                 sae, _, _, _ = numpy.linalg.lstsq(X, Y, rcond=None)
             sae_ = sae
             if fit_intercept:

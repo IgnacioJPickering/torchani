@@ -9,7 +9,7 @@ path = os.path.dirname(os.path.realpath(__file__))
 N = 97
 
 
-class TestCorrectInput(unittest.TestCase):
+class TestCorrectInput(torchani.testing.TestCase):
 
     def setUp(self):
         self.model = torchani.models.ANI1x(model_index=0, periodic_table_index=False)
@@ -28,18 +28,15 @@ class TestCorrectInput(unittest.TestCase):
         self.assertRaises(AssertionError, self.model, (torch.tensor([[0, 1, 2, 3]]), torch.zeros((1, 3, 3))))
         self.assertRaises(AssertionError, self.aev_computer, (torch.tensor([[0, 1, 2, 3]]), torch.zeros((1, 3, 3))))
         self.assertRaises(AssertionError, self.ani_model, (torch.tensor([[0, 1, 2, 3]]), torch.zeros((1, 3, 384))))
-        # non 3D coordiantes raise a runtime error
-        self.assertRaises(RuntimeError, self.model, (torch.tensor([[0, 1, 2, 3]]), torch.zeros((1, 4, 4))))
-        # no batch dimension raises an index error
-        self.assertRaises(IndexError, self.model, (torch.tensor([0, 1, 2, 3]), torch.zeros((4, 3))))
+        self.assertRaises(AssertionError, self.model, (torch.tensor([[0, 1, 2, 3]]), torch.zeros((1, 4, 4))))
+        self.assertRaises(AssertionError, self.model, (torch.tensor([0, 1, 2, 3]), torch.zeros((4, 3))))
 
 
-class TestEnergies(unittest.TestCase):
+class TestEnergies(torchani.testing.TestCase):
     # tests the predicions for a torchani.nn.Sequential(AEVComputer(),
     # ANIModel(), EnergyShifter()) against precomputed values
 
     def setUp(self):
-        self.tolerance = 5e-5
         model = torchani.models.ANI1x(model_index=0)
         self.aev_computer = model.aev_computer
         self.nnp = model.neural_networks
@@ -55,8 +52,7 @@ class TestEnergies(unittest.TestCase):
                 species = torch.from_numpy(species)
                 energies = torch.from_numpy(energies).to(torch.float)
                 energies_ = self.model((species, coordinates)).energies
-                max_diff = (energies - energies_).abs().max().item()
-                self.assertLess(max_diff, self.tolerance)
+                self.assertEqual(energies, energies_, exact_dtype=False)
 
     def testPadding(self):
         species_coordinates = []
@@ -75,8 +71,7 @@ class TestEnergies(unittest.TestCase):
             species_coordinates)
         energies = torch.cat(energies)
         energies_ = self.model((species_coordinates['species'], species_coordinates['coordinates'])).energies
-        max_diff = (energies - energies_).abs().max().item()
-        self.assertLess(max_diff, self.tolerance)
+        self.assertEqual(energies, energies_, exact_dtype=False)
 
 
 class TestEnergiesEnergyShifterJIT(TestEnergies):

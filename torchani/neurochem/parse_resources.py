@@ -15,15 +15,18 @@ SUPPORTED_INFO_FILES = ['ani-1ccx_8x.info', 'ani-1x_8x.info', 'ani-2x_8x.info']
 def parse_neurochem_resources(info_file_path):
     torchani_dir = Path(__file__).resolve().parent.parent.as_posix()
     resource_path = os.path.join(torchani_dir, 'resources/')
+    print(resource_path)
     local_dir = os.path.expanduser('~/.local/torchani/')
 
-    if os.stat(os.path.join(resource_path, info_file_path)).st_size != 0:
-        # No action needed if the info file located in the default path is not zero-sized
+    resource_info = os.path.join(resource_path, info_file_path)
+
+    if os.path.isfile(resource_info) and os.stat(resource_info).st_size > 0:
+        # No action needed if the info file can be located in the default path
         pass
 
     elif os.path.isfile(os.path.join(local_dir, info_file_path)):
-        # if a non-zero sized info file is not located in the default path,
-        # ~/.local/torchani is tried as an alternative
+        # if the info file is not located in the default path, ~/.local/torchani
+        # is tried as an alternative
         resource_path = local_dir
 
     else:
@@ -39,16 +42,10 @@ def parse_neurochem_resources(info_file_path):
             resource_res = requests.get(url)
             resource_zip = zipfile.ZipFile(io.BytesIO(resource_res.content))
             try:
-                # by default try to extract inside resources and overwrite the
-                # zero sized files
                 resource_zip.extractall(resource_path)
             except PermissionError:
-                # if this fails then files are extracted in ~/.local/torchani
                 resource_zip.extractall(local_dir)
                 resource_path = local_dir
-
-            # copy all files inside the extracted directory and remove
-            # the directory itself
             source = os.path.join(resource_path, extracted_name, "resources")
             dir_util.copy_tree(source, resource_path)
             dir_util.remove_tree(os.path.join(resource_path, extracted_name))
