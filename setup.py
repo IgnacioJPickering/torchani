@@ -100,8 +100,13 @@ setup(
     install_requires=[
         'torch',
         'lark-parser',
-        'requests',
         'importlib_metadata',
+        'requests', 
+        'h5py', 
+        'tensorboard', 
+        'pyyaml', 
+        'tqdm', 
+        'ase', 
     ],
     **cuaev_kwargs()
 )

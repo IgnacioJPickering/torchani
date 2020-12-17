@@ -3,6 +3,8 @@ import torch
 from torch import Tensor
 import math
 from typing import Tuple, Optional, NamedTuple
+
+import numpy as np
 import sys
 import warnings
 import importlib_metadata
@@ -23,7 +25,7 @@ if sys.version_info[:2] < (3, 7):
     Final = FakeFinal()
 else:
     from torch.jit import Final
-
+    
 
 class SpeciesAEV(NamedTuple):
     species: Tensor
@@ -48,7 +50,7 @@ def radial_terms(Rcr: float, EtaR: Tensor, ShfR: Tensor, distances: Tensor) -> T
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
-    distances = distances.view(-1, 1, 1)
+    distances = distances.view(-1, 1)
     fc = cutoff_cosine(distances, Rcr)
     # Note that in the equation in the paper there is no 0.25
     # coefficient, but in NeuroChem there is such a coefficient.
@@ -75,25 +77,23 @@ def angular_terms(Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta: Tensor,
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
-    vectors12 = vectors12.view(2, -1, 3, 1, 1, 1, 1)
-    distances12 = vectors12.norm(2, dim=-5)
-
+    vectors12 = vectors12.view(2, -1, 3, 1, 1)
+    distances12 = vectors12.norm(2, dim=-3)
     cos_angles = vectors12.prod(0).sum(1) / distances12.prod(0)
     # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
     angles = torch.acos(0.95 * cos_angles)
-
     fcj12 = cutoff_cosine(distances12, Rca)
     factor1 = ((1 + torch.cos(angles - ShfZ)) / 2) ** Zeta
     factor2 = torch.exp(-EtaA * (distances12.sum(0) / 2 - ShfA) ** 2)
     ret = 2 * factor1 * factor2 * fcj12.prod(0)
     # At this point, ret now has shape
-    # (conformations x atoms, ?, ?, ?, ?) where ? depend on constants.
+    # (conformations x atoms, ?, ?) where ? depend on constants.
     # We then should flat the last 4 dimensions to view the subAEV as a two
     # dimensional tensor (onnx doesn't support negative indices in flatten)
     return ret.flatten(start_dim=1)
 
 
-def compute_shifts(cell: Tensor, pbc: Tensor, cutoff: float) -> Tensor:
+def compute_shifts(cell: Tensor, pbc: Tensor, cutoff: Tensor) -> Tensor:
     """Compute the shifts of unit cell along the given cell vectors to make it
     large enough to contain all pairs of neighbor atoms with PBC under
     consideration
@@ -377,13 +377,26 @@ class AEVComputer(torch.nn.Module):
     sizes: Final[Tuple[int, int, int, int, int]]
     triu_index: Tensor
     use_cuda_extension: Final[bool]
+    def __init__(self, Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ,
+            num_species,
+            trainable_radial_shifts=False,
+            trainable_angular_shifts=False,
+            trainable_angle_sections=False,
+            trainable_etas=False, trainable_zeta=False, trainable_shifts=False, use_cuda_extension=False):
 
-    def __init__(self, Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species, use_cuda_extension=False):
         super().__init__()
-        self.Rcr = Rcr
-        self.Rca = Rca
+        self.register_buffer('Rcr', torch.tensor(Rcr, dtype=torch.double))
+        self.register_buffer('Rca', torch.tensor(Rca, dtype=torch.double))
         assert Rca <= Rcr, "Current implementation of AEVComputer assumes Rca <= Rcr"
-        self.num_species = num_species
+        self.register_buffer('num_species', torch.tensor(num_species, dtype=torch.long))
+        if trainable_shifts:
+            assert trainable_radial_shifts == False
+            assert trainable_angular_shifts == False
+            assert trainable_angle_sections == False
+            trainable_radial_shifts=True
+            trainable_angular_shifts=True
+            trainable_angle_sections=True
+
 
         # cuda aev
         if use_cuda_extension:
@@ -391,44 +404,76 @@ class AEVComputer(torch.nn.Module):
         self.use_cuda_extension = use_cuda_extension
 
         # convert constant tensors to a ready-to-broadcast shape
-        # shape convension (..., EtaR, ShfR)
-        self.register_buffer('EtaR', EtaR.view(-1, 1))
-        self.register_buffer('ShfR', ShfR.view(1, -1))
-        # shape convension (..., EtaA, Zeta, ShfA, ShfZ)
-        self.register_buffer('EtaA', EtaA.view(-1, 1, 1, 1))
-        self.register_buffer('Zeta', Zeta.view(1, -1, 1, 1))
-        self.register_buffer('ShfA', ShfA.view(1, 1, -1, 1))
-        self.register_buffer('ShfZ', ShfZ.view(1, 1, 1, -1))
+        # shape convension (EtaR/ShfR)
+        # shape convension (..., ShfA/EtaA, ShfZ/Zeta)
+        if trainable_etas:
+            if len(EtaR) == 1:
+                EtaR = EtaR.repeat(len(ShfR))
+            if len(EtaA) == 1:
+                EtaA = EtaA.repeat(len(ShfA))
+            self.register_parameter('EtaR', torch.nn.Parameter(EtaR))
+            self.register_parameter('EtaA', torch.nn.Parameter(EtaA.view(-1, 1)))
+        else:
+            self.register_buffer('EtaR', EtaR)
+            self.register_buffer('EtaA', EtaA.view(-1, 1))
+        if trainable_zeta:
+            self.register_parameter('Zeta', torch.nn.Parameter(Zeta.view(1, -1)))
+        else:
+            self.register_buffer('Zeta', Zeta.view(1, -1))
+        if trainable_radial_shifts:
+            self.register_parameter('ShfR', torch.nn.Parameter(ShfR))
+        else:
+            self.register_buffer('ShfR', ShfR)
+        if trainable_angular_shifts:
+            self.register_parameter('ShfA', torch.nn.Parameter(ShfA.view(-1, 1)))
+        else:
+            self.register_buffer('ShfA', ShfA.view(-1, 1))
+        if trainable_angle_sections:
+            self.register_parameter('ShfZ', torch.nn.Parameter(ShfZ.view(1, -1)))
+        else:
+            self.register_buffer('ShfZ', ShfZ.view(1, -1))
 
         # The length of radial subaev of a single species
-        self.radial_sublength = self.EtaR.numel() * self.ShfR.numel()
+        radial_sublength = self.ShfR.numel()
+        self.register_buffer('radial_sublength', torch.tensor(radial_sublength, dtype=torch.long))
         # The length of full radial aev
-        self.radial_length = self.num_species * self.radial_sublength
+        radial_length = self.num_species * self.radial_sublength
+        self.register_buffer('radial_length', torch.tensor(radial_length.item(), dtype=torch.long))
         # The length of angular subaev of a single species
-        self.angular_sublength = self.EtaA.numel() * self.Zeta.numel() * self.ShfA.numel() * self.ShfZ.numel()
+        angular_sublength =  self.ShfA.numel() * self.ShfZ.numel()
+        self.register_buffer('angular_sublength', torch.tensor(angular_sublength, dtype=torch.long))
         # The length of full angular aev
-        self.angular_length = (self.num_species * (self.num_species + 1)) // 2 * self.angular_sublength
+        angular_length = (self.num_species * (self.num_species + 1)) // 2 * self.angular_sublength
+        self.register_buffer('angular_length', torch.tensor(angular_length.item(), dtype=torch.long))
         # The length of full aev
-        self.aev_length = self.radial_length + self.angular_length
-        self.sizes = self.num_species, self.radial_sublength, self.radial_length, self.angular_sublength, self.angular_length
+        aev_length = self.radial_length + self.angular_length
+        self.register_buffer('aev_length', torch.tensor(aev_length.item(), dtype=torch.long))
 
         self.register_buffer('triu_index', triu_index(num_species).to(device=self.EtaR.device))
 
         # Set up default cell and compute default shifts.
         # These values are used when cell and pbc switch are not given.
-        cutoff = max(self.Rcr, self.Rca)
+        self.register_buffer('cutoff', torch.tensor(max(self.Rcr, self.Rca).item(), dtype=torch.double))
         default_cell = torch.eye(3, dtype=self.EtaR.dtype, device=self.EtaR.device)
         default_pbc = torch.zeros(3, dtype=torch.bool, device=self.EtaR.device)
-        default_shifts = compute_shifts(default_cell, default_pbc, cutoff)
+        default_shifts = compute_shifts(default_cell, default_pbc, self.cutoff)
         self.register_buffer('default_cell', default_cell)
         self.register_buffer('default_shifts', default_shifts)
 
+    def sizes(self) -> Tuple[int, int, int, int, int]:
+        return self.num_species.item(), self.radial_sublength.item(), self.radial_length.item(), self.angular_sublength.item(), self.angular_length.item()
+
     @classmethod
     def cover_linearly(cls, radial_cutoff: float, angular_cutoff: float,
-                       radial_eta: float, angular_eta: float,
-                       radial_dist_divisions: int, angular_dist_divisions: int,
-                       zeta: float, angle_sections: int, num_species: int,
-                       angular_start: float = 0.9, radial_start: float = 0.9):
+                       radial_eta = None, angular_eta = None,
+                       radial_dist_divisions=16, angular_dist_divisions=4,
+                       zeta=32.0, angle_sections=8, num_species=4,
+                       angular_start: float = 0.9, radial_start: float = 0.9, logspace=False, sync_spacings=False, radial_sigma = None, angular_sigma = None, unique_etas=True, adapt_etas=False,
+                       trainable_zeta=False, trainable_etas=False,
+                       trainable_radial_shifts=False,
+                       trainable_angular_shifts=False,
+                       trainable_angle_sections=False,
+                       trainable_shifts=False):
         r""" Provides a convenient way to linearly fill cutoffs
 
         This is a user friendly constructor that builds an
@@ -437,25 +482,135 @@ class AEVComputer(torch.nn.Module):
         sections for the angular sub-AEV, are linearly covered with shifts. By
         default the distance shifts start at 0.9 Angstroms.
 
+        Note that radial/angular eta determines the precision of the
+        corresponding gaussians.
+
         To reproduce the ANI-1x AEV's the signature ``(5.2, 3.5, 16.0, 8.0, 16, 4, 32.0, 8, 4)``
         can be used.
         """
+        if not adapt_etas:
+            assert not (angular_eta is None) == (angular_sigma is None)
+            assert not (radial_eta is None) == (radial_sigma is None)
+        else:
+            assert angular_eta is None
+            assert radial_eta is None
+            assert angular_sigma is None
+            assert angular_sigma is None
+
         # This is intended to be self documenting code that explains the way
         # the AEV parameters for ANI1x were chosen. This is not necessarily the
         # best or most optimal way but it is a relatively sensible default.
+        if sync_spacings:
+                assert radial_dist_divisions > angular_dist_divisions, 'This is needed for sync_spacings'
+
         Rcr = radial_cutoff
         Rca = angular_cutoff
-        EtaR = torch.tensor([float(radial_eta)])
-        EtaA = torch.tensor([float(angular_eta)])
-        Zeta = torch.tensor([float(zeta)])
 
-        ShfR = torch.linspace(radial_start, radial_cutoff, radial_dist_divisions + 1)[:-1]
-        ShfA = torch.linspace(angular_start, angular_cutoff, angular_dist_divisions + 1)[:-1]
+        # this is valid for both unique and non unique
+        Zeta = torch.tensor([float(zeta)])
+        if logspace:
+            # logarithmically spaced divisions
+            ShfR = torch.tensor(np.geomspace(radial_start, radial_cutoff,
+                radial_dist_divisions, endpoint=True), dtype=torch.float)
+            if sync_spacings:
+                ShfA = ShfR.clone()[0:angular_dist_divisions]
+                Rca = ShfA[-1].item() + 0.01
+            else:
+                ShfA = torch.tensor(np.geomspace(angular_start, angular_cutoff,
+                    angular_dist_divisions, endpoint=True), dtype=torch.float)
+        else:
+            # linearly spaced divisions
+            ShfR = torch.linspace(radial_start, radial_cutoff, radial_dist_divisions + 1)[:-1]
+            if sync_spacings:
+                ShfA = ShfR.clone()[0:angular_dist_divisions]
+                Rca = ShfA[-1].item() + 0.01
+            else:
+                ShfA = torch.linspace(angular_start, angular_cutoff,
+                        angular_dist_divisions + 1)[:-1]
         angle_start = math.pi / (2 * angle_sections)
 
         ShfZ = (torch.linspace(0, math.pi, angle_sections + 1) + angle_start)[:-1]
+        if adapt_etas:
+            unique_etas = False
+            factor = 1.3
+            radial_sigma =[(ShfR[1] - ShfR[0])*0.5*factor] + [(ShfR[j] -
+                ShfR[j-1])*0.5*factor for j in range(1, len(ShfR))]
 
-        return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species)
+            angular_sigma =[(ShfA[1] - ShfA[0])*0.5*factor] + [(ShfA[j] -
+                ShfA[j-1])*0.5*factor for j in range(1, len(ShfA))]
+
+        if radial_sigma is not None:
+            radial_eta = 1/(2 * np.asarray(radial_sigma) ** 2)
+            radial_eta = radial_eta.tolist()
+            if len(radial_eta) == 1:
+                radial_eta = radial_eta[0]
+        if angular_sigma is not None:
+            angular_eta = 1/(2 * np.asarray(angular_sigma) ** 2)
+            angular_eta = angular_eta.tolist()
+            if len(angular_eta) == 1:
+                angular_eta = angular_eta[0]
+
+        if unique_etas:
+            EtaR = torch.tensor([float(radial_eta)])
+            EtaA = torch.tensor([float(angular_eta)])
+        else:
+            EtaR = torch.tensor(radial_eta).float()
+            EtaA = torch.tensor(angular_eta).float()
+            assert len(EtaR) == radial_dist_divisions
+            assert len(EtaA) == angular_dist_divisions
+
+
+        assert len(ShfA) == angular_dist_divisions
+        assert len(ShfR) == radial_dist_divisions
+
+        return cls(Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ, num_species,
+                trainable_zeta=trainable_zeta, trainable_etas=trainable_etas,
+                trainable_radial_shifts=trainable_radial_shifts,
+                trainable_angular_shifts=trainable_angular_shifts,
+                trainable_angle_sections=trainable_angle_sections,
+                trainable_shifts=trainable_shifts)
+
+    @classmethod
+    def like_ani1x(cls):
+        kwargs = {'radial_cutoff' : 5.2,
+                'angular_cutoff' : 3.5,
+                'radial_eta' : 16.0,
+                'angular_eta': 8.0,
+                'radial_dist_divisions': 16,
+                'angular_dist_divisions': 4,
+                'zeta': 32.0,
+                'angle_sections': 8,
+                'num_species': 4,
+                'angular_start': 0.9,
+                'radial_start': 0.9}
+        return cls.cover_linearly(**kwargs)
+
+    @classmethod
+    def like_ani2x(cls):
+        kwargs = {'radial_cutoff' : 5.1,
+                'angular_cutoff' : 3.5,
+                'radial_eta' : 19.7,
+                'angular_eta': 12.5,
+                'radial_dist_divisions': 16,
+                'angular_dist_divisions': 8,
+                'zeta': 14.1,
+                'angle_sections': 4,
+                'num_species': 7,
+                'angular_start': 0.8,
+                'radial_start': 0.8}
+        # note that there is a small difference of 1 digit in one decimal place
+        # in the eight element of ShfR this element is 2.6812 using this method
+        # and 2.6813 for the actual network, but this is not significant for
+        # retraining purposes
+        return cls.cover_linearly(**kwargs)
+
+    @classmethod
+    def like_ani1ccx(cls):
+        # just a synonym
+        return cls.like_ani1x()
+
+    def extra_repr(self):
+        return f'Rcr={self.Rcr}, Rca={self.Rca}, EtaR={self.EtaR}, ShfR={self.ShfR}, EtaA={self.EtaA}, ShfA={self.ShfA}, Zeta={self.Zeta}, ShfZ={self.ShfZ}, num_species={self.num_species}'
 
     def constants(self):
         return self.Rcr, self.EtaR, self.ShfR, self.Rca, self.ShfZ, self.EtaA, self.Zeta, self.ShfA
@@ -512,11 +667,10 @@ class AEVComputer(torch.nn.Module):
             return SpeciesAEV(species, aev)
 
         if cell is None and pbc is None:
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes, None)
+            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
         else:
             assert (cell is not None and pbc is not None)
-            cutoff = max(self.Rcr, self.Rca)
-            shifts = compute_shifts(cell, pbc, cutoff)
-            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes, (cell, shifts))
+            shifts = compute_shifts(cell, pbc, self.cutoff)
+            aev = compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
 
         return SpeciesAEV(species, aev)

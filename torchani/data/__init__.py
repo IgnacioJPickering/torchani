@@ -84,6 +84,7 @@ from os.path import join, isfile, isdir
 import os
 from ._pyanitools import anidataloader
 from .. import utils
+from .. import modules
 import importlib
 import functools
 import math
@@ -104,7 +105,9 @@ PADDING = {
     'species': -1,
     'coordinates': 0.0,
     'forces': 0.0,
-    'energies': 0.0
+    'energies': 0.0, 
+    'energies_ex': 0.0, 
+    'foscs_ex': 0.0
 }
 
 
@@ -139,6 +142,19 @@ class Transformations:
     """Convert one reenterable iterable to another reenterable iterable"""
 
     @staticmethod
+    def standarize_keys(reenterable_iterable, nonstandard_keys):
+        def reenterable_iterable_factory():
+            for d in reenterable_iterable:
+                for std, non_std in nonstandard_keys.items():
+                    d[std] = d.pop(non_std)
+                yield d
+        try:
+            return IterableAdapterWithLength(reenterable_iterable_factory, len(reenterable_iterable))
+        except TypeError:
+            return IterableAdapter(reenterable_iterable_factory)
+
+
+    @staticmethod
     def species_to_indices(reenterable_iterable, species_order=('H', 'C', 'N', 'O', 'F', 'S', 'Cl')):
         if species_order == 'periodic_table':
             species_order = utils.PERIODIC_TABLE
@@ -154,15 +170,19 @@ class Transformations:
             return IterableAdapter(reenterable_iterable_factory)
 
     @staticmethod
-    def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None):
+    def subtract_self_energies(reenterable_iterable, self_energies=None, species_order=None, fit_intercept=False, ex_key=None):
         intercept = 0.0
         shape_inference = False
-        if isinstance(self_energies, utils.EnergyShifter):
+        if isinstance(self_energies, (utils.EnergyShifter, modules.EnergyShifter)):
+            if isinstance(self_energies, utils.EnergyShifter):
+                fit_intercept = self_energies.fit_intercept
             shape_inference = True
             shifter = self_energies
             self_energies = {}
             counts = {}
             Y = []
+            if ex_key is not None:
+                Yx = []
             for n, d in enumerate(reenterable_iterable):
                 species = d['species']
                 count = Counter()
@@ -176,6 +196,8 @@ class Transformations:
                     if len(counts[s]) != n + 1:
                         counts[s].append(0)
                 Y.append(d['energies'])
+                if ex_key is not None:
+                    Yx.append(d[ex_key])
 
             # sort based on the order in periodic table by default
             if species_order is None:
@@ -184,29 +206,53 @@ class Transformations:
             species = sorted(list(counts.keys()), key=lambda x: species_order.index(x))
 
             X = [counts[s] for s in species]
-            if shifter.fit_intercept:
+            if fit_intercept:
                 X.append([1] * n)
             X = numpy.array(X).transpose()
             Y = numpy.array(Y)
-            if Y.shape[0] == 0:
-                raise RuntimeError("subtract_self_energies could not find any energies in the provided dataset.\n"
+            if ex_key is not None:
+                Yx = numpy.array(Yx)
+                if Yx.shape[0] == 0:
+                    raise RuntimeError("subtract_self_energies could not find any energies in the provided dataset.\n"
                                    "Please make sure the path provided to data.load() points to a dataset has energies and is not empty or corrupted.")
-            sae, _, _, _ = numpy.linalg.lstsq(X, Y, rcond=None)
+                Y_total = numpy.concatenate((Y.reshape(-1, 1), Yx), axis=-1)
+                sae, _, _, _ = numpy.linalg.lstsq(X, Y_total, rcond=None)
+            else:
+               if Y.shape[0] == 0:
+                   raise RuntimeError("subtract_self_energies could not find any energies in the provided dataset.\n"
+                                   "Please make sure the path provided to data.load() points to a dataset has energies and is not empty or corrupted.")
+                sae, _, _, _ = numpy.linalg.lstsq(X, Y, rcond=None)
             sae_ = sae
-            if shifter.fit_intercept:
+            if fit_intercept:
+                assert ex_key is None
                 intercept = sae[-1]
                 sae_ = sae[:-1]
             for s, e in zip(species, sae_):
+                if isinstance(e, numpy.ndarray):
+                    e = e.tolist()
                 self_energies[s] = e
-            shifter.__init__(sae, shifter.fit_intercept)
+            if isinstance(shifter, utils.EnergyShifter):
+                shifter.__init__(sae, shifter.fit_intercept)
+            else:
+                if fit_intercept:
+                    shifter.__init__(self_energies=sae[:-1], intercept=sae[-1])
+                else:
+                    shifter.__init__(self_energies=sae)
         gc.collect()
 
         def reenterable_iterable_factory():
             for d in reenterable_iterable:
                 e = intercept
+                ex = intercept
                 for s in d['species']:
-                    e += self_energies[s]
+                    if ex_key is None:
+                        e += self_energies[s]
+                    else:
+                        e += self_energies[s][0]
+                        ex += numpy.asarray(self_energies[s][1:])
                 d['energies'] -= e
+                if ex_key is not None:
+                    d[ex_key] = numpy.asarray(d[ex_key]) - ex
                 yield d
         if shape_inference:
             return IterableAdapterWithLength(reenterable_iterable_factory, n)
@@ -324,8 +370,25 @@ class TransformableIterable:
         return len(self.wrapped_iterable)
 
 
-def load(path, additional_properties=()):
+def load(path, nonstandard_keys=None, additional_properties=()):
+    r"""As an additional option, if the dataset has a nonstandard key name you
+    can use these functions to rename that key into a standard key in memory,
+    without altering the dataset itself. This function takes a dictionary of the
+    form {standard_name : nonstandard_name}
+    """
     properties = PROPERTIES + additional_properties
+
+    coordinates_key = 'coordinates'
+    species_key = 'species'
+
+    # species and coordinates have to be standarized first, since they 
+    # are used always when iterating
+    if nonstandard_keys is not None:
+        if 'species' in nonstandard_keys.keys():
+            species_key = nonstandard_keys.pop('species')
+
+        if 'coordinates' in nonstandard_keys.keys():
+            coordinates_key = nonstandard_keys.pop('coordinates')
 
     def h5_files(path):
         """yield file name of all h5 files in a path"""
@@ -350,16 +413,20 @@ def load(path, additional_properties=()):
 
     def conformations():
         for m in molecules():
-            species = m['species']
-            coordinates = m['coordinates']
+            species = m[species_key]
+            coordinates = m[coordinates_key]
             for i in range(coordinates.shape[0]):
                 ret = {'species': species, 'coordinates': coordinates[i]}
                 for k in properties:
                     if k in m:
                         ret[k] = m[k][i]
                 yield ret
+    iterable = TransformableIterable(IterableAdapter(lambda: conformations()))
 
-    return TransformableIterable(IterableAdapter(lambda: conformations()))
+    # check if there is any other key to standarize
+    if nonstandard_keys:
+        iterable = iterable.standarize_keys(nonstandard_keys)
+    return iterable
 
 
 __all__ = ['load', 'collate_fn']

@@ -31,11 +31,15 @@ formats of NeuroChem at :attr:`torchani.neurochem`, and more at :attr:`torchani.
 
 from .utils import EnergyShifter
 from .nn import ANIModel, Ensemble, SpeciesConverter
+from .modules import TemplateModel
 from .aev import AEVComputer
 from . import utils
 from . import neurochem
 from . import models
 from . import units
+from . import modules
+from . import training
+from . import geometry
 from pkg_resources import get_distribution, DistributionNotFound
 import warnings
 from . import testing
@@ -47,8 +51,7 @@ except DistributionNotFound:
     pass
 
 __all__ = ['AEVComputer', 'EnergyShifter', 'ANIModel', 'Ensemble', 'SpeciesConverter',
-           'utils', 'neurochem', 'models', 'units', 'testing']
-
+           'utils', 'neurochem', 'models', 'units', 'testing', 'modules', 'training', 'TemplateModel', 'geometry']
 try:
     from . import ase  # noqa: F401
     __all__.append('ase')

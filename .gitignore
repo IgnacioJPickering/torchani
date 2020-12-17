@@ -43,6 +43,13 @@ Untitled.ipynb
 .coverage
 htmlcov/
 /include
-training_outputs/
 examples/dataset.pkl
+# no tensorflow
+*tfevents*
+/training_outputs/*/
+/tools/benchmarks/*
+# ignore slurm outputs
+*-training.out 
+nohup.out
+slurm_script*
 
