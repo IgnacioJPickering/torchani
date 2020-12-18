@@ -5,15 +5,6 @@ from torch.nn import functional
 from torch import Tensor
 
 from .aev_computer_joint import AEVComputerJoint
-# these are needed due to pytorch's default sort and argsort being 
-# unstable (don't preserve order)
-# TODO: I don't think these are needed
-# from .workarounds import stable_sort, stable_argsort
-
-def cumsum_from_zero(input_: Tensor) -> Tensor:
-    cumsum = torch.zeros_like(input_)
-    torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
-    return cumsum
 
 class CellListComputer(torch.nn.Module):
 
@@ -299,11 +290,17 @@ class CellListComputer(torch.nn.Module):
         atom_flat_index = atom_flat_index.squeeze()
         flat_bucket_count = torch.bincount(atom_flat_index,
                                               minlength=self.total_buckets).to(atom_flat_index.device)
-        flat_bucket_cumcount = cumsum_from_zero(flat_bucket_count).to(atom_flat_index.device)
+        flat_bucket_cumcount = self.cumsum_from_zero(flat_bucket_count).to(atom_flat_index.device)
 
         # this is A*
         max_in_bucket = flat_bucket_count.max() 
         return flat_bucket_count, flat_bucket_cumcount, max_in_bucket
+
+    @staticmethod
+    def cumsum_from_zero(input_: Tensor) -> Tensor:
+        cumsum = torch.zeros_like(input_)
+        torch.cumsum(input_[:-1], dim=0, out=cumsum[1:])
+        return cumsum
 
     @staticmethod
     def sort_along_row(x: Tensor, max_value: Tensor, row_for_sorting : int=1) -> Tensor:
@@ -431,6 +428,85 @@ class CellListComputer(torch.nn.Module):
         neighbor_flat_indices = neighbor_flat_indices.reshape(1, atoms, neighbors)
         return neighbor_flat_indices, neighbor_translation_types
 
+    def forward(self, coordinates: Tensor):
+        # 2) Fractionalize coordinates
+        fractional_coordinates = self.fractionalize_coordinates(coordinates)
+    
+        # 3) Get vector indices and flattened indices for atoms in unit cell 
+        # shape C x A x 3 this gives \vb{g}(a), the vector bucket idx
+        # shape C x A this gives f(a), the flat bucket idx for atom a
+        atom_vector_index, atom_flat_index =\
+                                self.get_bucket_indices(fractional_coordinates)
+        # 4) get image_indices -> atom_indices and inverse mapping
+        # NOTE: there is not necessarily a requirement to do this here
+        # both shape A, a(i) and i(a)
+        # TODO: watch out, if sorting is not stable this may scramble the atoms
+        # in the same box, so that the atidx you get after applying
+        # atidx_from_imidx[something] will not necessarily be the correct order
+        # but since what we want is the pairs this should in principle be fine, 
+        # since the pairs are agnostic to species. In any case it would definitely 
+        # be safer to use a stable sorting algorithm
+        imidx_from_atidx, atidx_from_imidx = self.get_imidx_converters(
+                                                        atom_flat_index)
+    
+        # FIRST WE WANT "WITHIN" IMAGE PAIRS
+        # 1) Get the number of atoms in each bucket (as indexed with f idx)
+        # this gives A*, A(f) , "A(f' <= f)" = Ac(f) (cumulative) f being the
+        # flat bucket index, A being the number of atoms for that bucket, 
+        # and Ac being the cumulative number of atoms up to that bucket
+        flat_bucket_count, flat_bucket_cumcount, max_in_bucket =\
+            self.get_atoms_in_flat_bucket_counts(atom_flat_index)
+    
+        # 2) this are indices WITHIN the central buckets
+        within_image_pairs =\
+            self.get_within_image_pairs(flat_bucket_count,
+                flat_bucket_cumcount, max_in_bucket)
+
+        # NOW WE WANT "BETWEEN" IMAGE PAIRS
+        # 1) Get the vector indices of all (pure) neighbors of each atom
+        # this gives \vb{g}(a, n) and f(a, n)
+        # shapes 1 x A x Eta x 3 and 1 x A x Eta respectively
+        # 
+        # neighborhood count is A{n} (a), the number of atoms on the
+        # neighborhood (all the neighbor buckets) of each atom,
+        # A{n} (a) has shape 1 x A
+        # neighbor_translation_types 
+        # has the type of shift for T(a, n), atom a, 
+        # neighbor bucket n
+        neighbor_flat_indices, neighbor_translation_types =\
+                self.get_neighbor_indices(atom_vector_index)
+        neighbor_count = flat_bucket_count[neighbor_flat_indices] 
+        neighbor_cumcount = flat_bucket_cumcount[neighbor_flat_indices]
+        neighborhood_count = neighbor_count.sum(-1).squeeze() 
+
+        # 2) Upper and lower part of the external pairlist this is the
+        # correct "unpadded" upper 
+        # part of the pairlist it repeats each image
+        # idx a number of times equal to the number of atoms on the
+        # neighborhood of each atom
+        upper = torch.repeat_interleave(imidx_from_atidx.squeeze(),
+                neighborhood_count)
+        lower, between_pairs_translations =\
+            self.get_lower_between_image_pairs(neighbor_count,
+                                   neighbor_cumcount, max_in_bucket,
+                                   neighbor_translation_types)
+        assert lower.shape == upper.shape
+        between_image_pairs = torch.stack((upper, lower), dim=0)
+
+        # concatenate within and between
+        image_pairs = torch.cat(
+                (between_image_pairs, within_image_pairs), dim=1)
+        atom_pairs = atidx_from_imidx[image_pairs]
+        within_pairs_translations = torch.zeros(
+                len(within_image_pairs[0]), 3, device=image_pairs.device)
+        # -1 is necessary to ensure correct shifts
+        shift_values = -torch.cat((between_pairs_translations,
+            within_pairs_translations), dim=0)
+        shift_indices =\
+        (shift_values/self.cell_diagonal).to(torch.long)
+        assert shift_values.shape[0] == atom_pairs.shape[1]
+        return atom_pairs, shift_indices, shift_values
+
 
 class AEVComputerNL(AEVComputerJoint):
     
@@ -449,10 +525,11 @@ class AEVComputerNL(AEVComputerJoint):
 
     def neighbor_pairs(self, padding_mask: Tensor, coordinates: Tensor, cell: Tensor,
                        shifts: Tensor, cutoff: float) -> Tuple[Tensor, Tensor]:
+        # note that padding_mask and shifts are unused
         assert coordinates.shape[0] == 1
         coordinates = coordinates.detach()
         cell = cell.detach()
-        # padding mask has to be unused for this, also shifts
+
         # 1) Setup cell parameters, only once for constant V simulations, 
         # every time for variable V, (constant P) simulations
         if self.constant_volume and self.clist.total_buckets == 0:
@@ -462,82 +539,8 @@ class AEVComputerNL(AEVComputerJoint):
             shape_buckets_grid, total_buckets =\
                                         self.clist.setup_cell_parameters(cell)
 
-        # 2) Fractionalize coordinates
-        fractional_coordinates = self.clist.fractionalize_coordinates(coordinates)
-    
-        # 3) Get vector indices and flattened indices for atoms in unit cell 
-        # shape C x A x 3 this gives \vb{g}(a), the vector bucket idx
-        # shape C x A this gives f(a), the flat bucket idx for atom a
-        atom_vector_index, atom_flat_index =\
-                                self.clist.get_bucket_indices(fractional_coordinates)
-        # 4) get image_indices -> atom_indices and inverse mapping
-        # NOTE: there is not necessarily a requirement to do this here
-        # both shape A, a(i) and i(a)
-        # TODO: watch out, if sorting is not stable this may scramble the atoms
-        # in the same box, so that the atidx you get after applying
-        # atidx_from_imidx[something] will not necessarily be the correct order
-        # but since what we want is the pairs this should in principle be fine, 
-        # since the pairs are agnostic to species. In any case it would definitely 
-        # be safer to use a stable sorting algorithm
-        imidx_from_atidx, atidx_from_imidx = self.clist.get_imidx_converters(
-                                                        atom_flat_index)
-    
-        # FIRST WE WANT "WITHIN" IMAGE PAIRS
-        # 1) Get the number of atoms in each bucket (as indexed with f idx)
-        # this gives A*, A(f) , "A(f' <= f)" = Ac(f) (cumulative) f being the
-        # flat bucket index, A being the number of atoms for that bucket, 
-        # and Ac being the cumulative number of atoms up to that bucket
-        flat_bucket_count, flat_bucket_cumcount, max_in_bucket =\
-            self.clist.get_atoms_in_flat_bucket_counts(atom_flat_index)
-    
-        # 2) this are indices WITHIN the central buckets
-        within_image_pairs =\
-            self.clist.get_within_image_pairs(flat_bucket_count,
-                flat_bucket_cumcount, max_in_bucket)
+        atom_pairs, shift_indices, shift_values = self.clist(coordinates)
 
-        # NOW WE WANT "BETWEEN" IMAGE PAIRS
-        # 1) Get the vector indices of all (pure) neighbors of each atom
-        # this gives \vb{g}(a, n) and f(a, n)
-        # shapes 1 x A x Eta x 3 and 1 x A x Eta respectively
-        # 
-        # neighborhood count is A{n} (a), the number of atoms on the
-        # neighborhood (all the neighbor buckets) of each atom,
-        # A{n} (a) has shape 1 x A
-        # neighbor_translation_types 
-        # has the type of shift for T(a, n), atom a, 
-        # neighbor bucket n
-        neighbor_flat_indices, neighbor_translation_types =\
-                self.clist.get_neighbor_indices(atom_vector_index)
-        neighbor_count = flat_bucket_count[neighbor_flat_indices] 
-        neighbor_cumcount = flat_bucket_cumcount[neighbor_flat_indices]
-        neighborhood_count = neighbor_count.sum(-1).squeeze() 
-
-        # 2) Upper and lower part of the external pairlist this is the
-        # correct "unpadded" upper 
-        # part of the pairlist it repeats each image
-        # idx a number of times equal to the number of atoms on the
-        # neighborhood of each atom
-        upper = torch.repeat_interleave(imidx_from_atidx.squeeze(),
-                neighborhood_count)
-        lower, between_pairs_translations =\
-            self.clist.get_lower_between_image_pairs(neighbor_count,
-                                   neighbor_cumcount, max_in_bucket,
-                                   neighbor_translation_types)
-        assert lower.shape == upper.shape
-        between_image_pairs = torch.stack((upper, lower), dim=0)
-
-        # concatenate within and between
-        image_pairs = torch.cat(
-                (between_image_pairs, within_image_pairs), dim=1)
-        atom_pairs = atidx_from_imidx[image_pairs]
-        within_pairs_translations = torch.zeros(
-                len(within_image_pairs[0]), 3, device=image_pairs.device)
-        # -1 is necessary to ensure correct shifts
-        shift_values = -torch.cat((between_pairs_translations,
-            within_pairs_translations), dim=0)
-        shift_indices =\
-        (shift_values/self.clist.cell_diagonal).to(torch.long)
-        assert shift_values.shape[0] == atom_pairs.shape[1]
         num_mols = coordinates.shape[0]
         num_atoms = coordinates.shape[1]
         selected_coordinates = coordinates.index_select(1,
