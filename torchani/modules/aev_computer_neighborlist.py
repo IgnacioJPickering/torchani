@@ -450,9 +450,6 @@ class AEVComputerNL(AEVComputerJoint):
     def neighbor_pairs(self, padding_mask: Tensor, coordinates: Tensor, cell: Tensor,
                        shifts: Tensor, cutoff: float) -> Tuple[Tensor, Tensor]:
         assert coordinates.shape[0] == 1
-        #assert (padding_mask == False).all()
-        del shifts
-        del padding_mask
         coordinates = coordinates.detach()
         cell = cell.detach()
         # padding mask has to be unused for this, also shifts

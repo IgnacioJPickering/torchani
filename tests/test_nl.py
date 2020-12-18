@@ -259,8 +259,8 @@ class TestCellList(unittest.TestCase):
             coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001)
 
             pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
-            _, e_c = modelc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
-            _, e_j = modelj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+            _, e_c = modelc((species, coordinates), cell=self.cell.to(device).double(), pbc=pbc)
+            _, e_j = modelj((species, coordinates), cell=self.cell.to(device).double(), pbc=pbc)
             self.assertTrue(torch.isclose(e_c, e_j).all())
 
     def testAEVComputerNLRandomEfloat(self):
@@ -291,8 +291,8 @@ class TestCellList(unittest.TestCase):
             coordinates = torch.clamp(coordinates, min=0.0001, max=self.cell_size - 0.0001)
 
             pbc = torch.tensor([True, True, True], dtype=torch.bool).to(device)
-            _, aev_c = aevc((species, coordinates), cell=self.cell.to(device), pbc=pbc)
-            _, aev_j = aevj((species, coordinates), cell=self.cell.to(device), pbc=pbc)
+            _, aev_c = aevc((species, coordinates), cell=self.cell.to(device).double(), pbc=pbc)
+            _, aev_j = aevj((species, coordinates), cell=self.cell.to(device).double(), pbc=pbc)
             self.assertTrue(torch.isclose(aev_c, aev_j).all())
 
     # TODO:note that this test fails with single precision!

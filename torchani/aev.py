@@ -79,7 +79,7 @@ def angular_terms(Rca: float, ShfZ: Tensor, EtaA: Tensor, Zeta: Tensor,
     """
     vectors12 = vectors12.view(2, -1, 3, 1, 1)
     distances12 = vectors12.norm(2, dim=-3)
-    cos_angles = vectors12.prod(0).sum(1) / distances12.prod(0)
+    cos_angles = vectors12.prod(0).sum(1) / torch.clamp(distances12.prod(0), min=1e-10)
     # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
     angles = torch.acos(0.95 * cos_angles)
     fcj12 = cutoff_cosine(distances12, Rca)
@@ -365,17 +365,17 @@ class AEVComputer(torch.nn.Module):
     .. _ANI paper:
         http://pubs.rsc.org/en/Content/ArticleLanding/2017/SC/C6SC05720A#!divAbstract
     """
-    Rcr: Final[float]
-    Rca: Final[float]
-    num_species: Final[int]
+    #Rcr: Final[float]
+    #Rca: Final[float]
+    #num_species: Final[int]
 
-    radial_sublength: Final[int]
-    radial_length: Final[int]
-    angular_sublength: Final[int]
-    angular_length: Final[int]
-    aev_length: Final[int]
-    sizes: Final[Tuple[int, int, int, int, int]]
-    triu_index: Tensor
+    #radial_sublength: Final[int]
+    #radial_length: Final[int]
+    #angular_sublength: Final[int]
+    #angular_length: Final[int]
+    #aev_length: Final[int]
+    #sizes: Final[Tuple[int, int, int, int, int]]
+    #triu_index: Tensor
     use_cuda_extension: Final[bool]
     def __init__(self, Rcr, Rca, EtaR, ShfR, EtaA, Zeta, ShfA, ShfZ,
             num_species,

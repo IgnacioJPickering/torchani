@@ -179,10 +179,9 @@ class AEVComputerJoint(torch.nn.Module):
         vectors12 = vectors12.view(2, -1, 3, 1, 1)
         distances12 = vectors12.norm(2, dim=-3)
     
-        # 0.95 is multiplied to the cos values to prevent acos from
-        # returning NaN.
-        cos_angles = 0.95 * torch.nn.functional.cosine_similarity(vectors12[0], vectors12[1], dim=-3)
-        angles = torch.acos(cos_angles)
+        cos_angles = vectors12.prod(0).sum(1) / torch.clamp(distances12.prod(0), min=1e-10)
+        # 0.95 is multiplied to the cos values to prevent acos from returning NaN.
+        angles = torch.acos(0.95 * cos_angles)
     
         fcj12 = self.cutoff_cosine(distances12, Rca)
         factor1 = ((1 + torch.cos(angles - ShfZ)) / 2) ** Zeta
@@ -283,7 +282,7 @@ class AEVComputerJoint(torch.nn.Module):
         """
         # shifts consists of a tensor of shape 13 x 3
         # that has [[1, 1, 1], [1, 1, 0], ... etc]
-        coordinates = coordinates.detach()
+        coordinates = coordinates.detach().masked_fill(padding_mask.unsqueeze(-1), math.nan)
         cell = cell.detach()
     
         # Step 2: center cell
@@ -311,8 +310,6 @@ class AEVComputerJoint(torch.nn.Module):
         num_mols = padding_mask.shape[0]
         selected_coordinates = coordinates.index_select(1, p12_all.view(-1)).view(num_mols, 2, -1, 3)
         distances = (selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...] + shift_values).norm(2, -1)
-        padding_mask = padding_mask.index_select(1, p12_all.view(-1)).view(2, -1).any(0)
-        distances.masked_fill_(padding_mask, math.inf)
         in_cutoff = (distances <= cutoff).nonzero()
         molecule_index, pair_index = in_cutoff.unbind(1)
         molecule_index *= num_atoms
@@ -609,7 +606,9 @@ class AEVComputerJoint(torch.nn.Module):
             unchanged, and AEVs is a tensor of shape ``(N, A, self.aev_length())``
         """
         species, coordinates = input_
+        assert species.dim() == 2
         assert species.shape == coordinates.shape[:-1]
+        assert coordinates.shape[-1] == 3
 
         if cell is None and pbc is None:
             aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
