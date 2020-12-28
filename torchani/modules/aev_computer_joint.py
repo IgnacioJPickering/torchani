@@ -562,7 +562,14 @@ class AEVComputerJoint(torch.nn.Module):
         inv_cell = torch.inverse(cell)
         coordinates_cell = torch.matmul(coordinates, inv_cell)
         coordinates_cell -= coordinates_cell.floor() * pbc
-        return torch.matmul(coordinates_cell, cell)
+        coordinates_cell[coordinates_cell < 0.0] += 1.0
+        coordinates_cell[coordinates_cell >= 1.0] -= 1.0
+        assert (coordinates_cell >= 0.0).all()
+        assert (coordinates_cell < 1.0).all()
+        coordinates = torch.matmul(coordinates_cell, cell)
+        assert not torch.isnan(coordinates_cell).any()
+        assert not torch.isinf(coordinates_cell).any()
+        return coordinates
 
     def forward(self, input_: Tuple[Tensor, Tensor],
                 cell: Optional[Tensor] = None,
@@ -610,6 +617,9 @@ class AEVComputerJoint(torch.nn.Module):
         assert species.shape == coordinates.shape[:-1]
         assert coordinates.shape[-1] == 3
 
+        assert not torch.isnan(coordinates).any()
+        assert not torch.isinf(coordinates).any()
+
         if cell is None and pbc is None:
             aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), None)
         else:
@@ -617,5 +627,5 @@ class AEVComputerJoint(torch.nn.Module):
             shifts = self.compute_shifts(cell, pbc, self.cutoff)
             coordinates = self.map2central(cell, coordinates, pbc)
             aev = self.compute_aev(species, coordinates, self.triu_index, self.constants(), self.sizes(), (cell, shifts))
-
+        assert not torch.isnan(aev).any()
         return SpeciesAEV(species, aev)

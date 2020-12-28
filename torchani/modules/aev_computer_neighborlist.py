@@ -237,12 +237,15 @@ class CellListComputer(torch.nn.Module):
         # which amber does, in order to calculate diffusion coefficients, etc
         fractional_coordinates = fractional_coordinates - torch.floor(fractional_coordinates) 
         # fractional_coordinates should be in the range [0, 1.0)
-        fractional_coordinates[fractional_coordinates >= 1.] -= 1.0
-        fractional_coordinates[fractional_coordinates < 0.] += 1.0
-
-        assert (fractional_coordinates < 1.).all(),\
+        fractional_coordinates[fractional_coordinates >= 1.0] -= 1.0
+        fractional_coordinates[fractional_coordinates < 0.0] += 1.0
+        assert not torch.isnan(fractional_coordinates).any(),\
+                f"Some fractional coordinates are NaN."
+        assert not torch.isinf(fractional_coordinates).any(),\
+                f"Some fractional coordinates are +-Inf."
+        assert (fractional_coordinates < 1.0).all(),\
             f"Some fractional coordinates are too large {fractional_coordinates[fractional_coordinates >= 1.]}"
-        assert (fractional_coordinates >= 0.).all(),\
+        assert (fractional_coordinates >= 0.0).all(),\
             f"Some coordinates are too small {fractional_coordinates.masked_select(fractional_coordinates < 0.)}"
         return fractional_coordinates
 
@@ -350,11 +353,15 @@ class CellListComputer(torch.nn.Module):
         padded_pairs = padded_pairs.permute(1, 0, 2).reshape(2, -1)
         
         # this code is very confusing, but it gets the job done somehow
-        max_pairs_in_bucket = max_in_bucket * (max_in_bucket - 1) // 2
+        # TODO: JIT bug
+        one = torch.tensor(1, device=current_device, dtype=torch.long)
+        max_pairs_in_bucket = max_in_bucket * (max_in_bucket - one) // 2
         mask = torch.arange(0, max_pairs_in_bucket, device = current_device)
         num_buckets_with_pairs = len(withpairs_flat_index[0])
         mask = mask.repeat(num_buckets_with_pairs, 1)
-        withpairs_count_pairs = withpairs_flat_bucket_count * (withpairs_flat_bucket_count - 1) // 2
+        # TODO: JIT bug
+        one = torch.tensor(1, device=current_device, dtype=torch.long)
+        withpairs_count_pairs = withpairs_flat_bucket_count * (withpairs_flat_bucket_count - one) // 2
         mask = (mask < withpairs_count_pairs.reshape(-1, 1)).reshape(-1)
 
         upper = torch.masked_select(padded_pairs[0], mask)
@@ -461,6 +468,7 @@ class CellListComputer(torch.nn.Module):
         within_image_pairs =\
             self.get_within_image_pairs(flat_bucket_count,
                 flat_bucket_cumcount, max_in_bucket)
+        assert torch.max(within_image_pairs) < atidx_from_imidx.shape[0]
 
         # NOW WE WANT "BETWEEN" IMAGE PAIRS
         # 1) Get the vector indices of all (pure) neighbors of each atom
@@ -496,6 +504,7 @@ class CellListComputer(torch.nn.Module):
         # concatenate within and between
         image_pairs = torch.cat(
                 (between_image_pairs, within_image_pairs), dim=1)
+        assert torch.max(image_pairs) < atidx_from_imidx.shape[0]
         atom_pairs = atidx_from_imidx[image_pairs]
         within_pairs_translations = torch.zeros(
                 len(within_image_pairs[0]), 3, device=image_pairs.device)
@@ -504,6 +513,7 @@ class CellListComputer(torch.nn.Module):
             within_pairs_translations), dim=0)
         shift_indices =\
         (shift_values/self.cell_diagonal).to(torch.long)
+
         assert shift_values.shape[0] == atom_pairs.shape[1]
         return atom_pairs, shift_indices, shift_values
 
@@ -543,9 +553,12 @@ class AEVComputerNL(AEVComputerJoint):
 
         num_mols = coordinates.shape[0]
         num_atoms = coordinates.shape[1]
+
         selected_coordinates = coordinates.index_select(1,
                 atom_pairs.view(-1)).view(num_mols, 2, -1, 3) 
-        distances = (selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...] + shift_values).norm(2, -1)
+        distances = selected_coordinates[:, 0, ...] - selected_coordinates[:, 1, ...]
+        distances = distances + shift_values
+        distances = torch.linalg.norm(distances, dim=-1)
         in_cutoff = (distances <= cutoff).nonzero()
         molecule_index, pair_index = in_cutoff.unbind(1)
         molecule_index *= num_atoms    
