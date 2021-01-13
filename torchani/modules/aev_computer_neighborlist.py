@@ -11,6 +11,7 @@ class CellListComputer(torch.nn.Module):
     def __init__(self, cutoff, buckets_per_cutoff=1):
         super().__init__()
         self.register_buffer('cell_diagonal', torch.zeros(1))
+        self.register_buffer('cell_inverse', torch.zeros(1))
         self.register_buffer('total_buckets', torch.zeros(1, dtype=torch.long))
         self.register_buffer('scaling_for_flat_index', torch.zeros(1, dtype=torch.long))
         self.register_buffer('shape_buckets_grid', torch.zeros(1, dtype=torch.long))
@@ -107,7 +108,10 @@ class CellListComputer(torch.nn.Module):
         # to start with 
 
         # 1) Update the cell diagonal and translation displacements
-        self.cell_diagonal = torch.diagonal(cell)
+        # sizes of each side are given by norm of each basis vector of the unit cell
+        self.cell_diagonal = torch.linalg.norm(cell, ord=2, dim=1)
+        self.cell_inverse = torch.inverse(cell)
+
         # I just need to index select this and add it to the coordinates to displace them
         self.translation_displacements = self.translation_displacement_indices * self.cell_diagonal
         
@@ -231,11 +235,10 @@ class CellListComputer(torch.nn.Module):
         # instance that if the coordinate is 3.15 times the cell length, it is
         # turned into 3.15; if it is 0.15 times the cell length, it is turned
         # into 0.15, etc
-        #fractional_coordinates = coordinates / self.cell_diagonal.reshape(1, 1, -1)
-        fractional_coordinates = coordinates / self.cell_diagonal.reshape(1, 1, -1)
+        fractional_coordinates = torch.matmul(coordinates, self.cell_inverse)
         # this is done to account for possible coordinates outside the box,
         # which amber does, in order to calculate diffusion coefficients, etc
-        fractional_coordinates = fractional_coordinates - torch.floor(fractional_coordinates) 
+        fractional_coordinates -= fractional_coordinates.floor()
         # fractional_coordinates should be in the range [0, 1.0)
         fractional_coordinates[fractional_coordinates >= 1.0] -= 1.0
         fractional_coordinates[fractional_coordinates < 0.0] += 1.0
@@ -468,7 +471,6 @@ class CellListComputer(torch.nn.Module):
         within_image_pairs =\
             self.get_within_image_pairs(flat_bucket_count,
                 flat_bucket_cumcount, max_in_bucket)
-        assert torch.max(within_image_pairs) < atidx_from_imidx.shape[0]
 
         # NOW WE WANT "BETWEEN" IMAGE PAIRS
         # 1) Get the vector indices of all (pure) neighbors of each atom
@@ -504,7 +506,6 @@ class CellListComputer(torch.nn.Module):
         # concatenate within and between
         image_pairs = torch.cat(
                 (between_image_pairs, within_image_pairs), dim=1)
-        assert torch.max(image_pairs) < atidx_from_imidx.shape[0]
         atom_pairs = atidx_from_imidx[image_pairs]
         within_pairs_translations = torch.zeros(
                 len(within_image_pairs[0]), 3, device=image_pairs.device)
