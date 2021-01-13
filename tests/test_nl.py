@@ -1,5 +1,6 @@
 import unittest
 import pickle
+import numpy as np
 
 
 import torch
@@ -14,6 +15,7 @@ with open('test_nl_data.pkl', 'rb') as f:
 class TestCellList(unittest.TestCase):
 
     def setUp(self):
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         cut = 5.2
         cell_size = cut * 3 + 0.1
         self.cut = cut
@@ -314,14 +316,16 @@ class TestCellList(unittest.TestCase):
     def testNeighborlistJit(self):
         # TODO many JIT optimizations break the code so I turn every
         # optimization off until pytorch fixes them
-        torch._C._jit_set_profiling_executor(False)
-        torch._C._jit_set_profiling_mode(False)
-        torch._C._jit_override_can_fuse_on_cpu(False)
-        torch._C._jit_set_texpr_fuser_enabled(False)
-        torch._C._jit_set_nvfuser_enabled(False)
+        #torch._C._jit_set_profiling_executor(False)
+        torch._C._jit_set_profiling_mode(False) # this also has an effect
+        #torch._C._jit_override_can_fuse_on_cpu(False)
+        torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
+        #torch._C._jit_set_nvfuser_enabled(False)
         device = torch.device('cuda')
         aevj = AEVComputerJoint.like_ani1x().to(device).to(torch.double)
         aevc = AEVComputerNL.like_ani1x().to(device).to(torch.double)
+        aevj.requires_grad_(False)
+        aevc.requires_grad_(False)
         aevj = torch.jit.script(aevj)
         aevc = torch.jit.script(aevc)
         species = torch.LongTensor(100).random_(0, 4).to(device).unsqueeze(0)
@@ -338,6 +342,42 @@ class TestCellList(unittest.TestCase):
             _, aev_j = aevj((species, coordinates.double()), cell=self.cell.to(device).double(), pbc=pbc)
             _ = -torch.autograd.grad(aev_j.sum(), coordinates)[0]
             self.assertTrue(torch.isclose(aev_c, aev_j).all())
+
+    def testLargeWater(self):
+        # TODO many JIT optimizations break the code so I turn every
+        # optimization off until pytorch fixes them
+        #torch._C._jit_set_profiling_executor(False)
+        torch._C._jit_set_profiling_mode(False) # this also has an effect
+        #torch._C._jit_override_can_fuse_on_cpu(False)
+        torch._C._jit_set_texpr_fuser_enabled(False) # this has an effect
+        #torch._C._jit_set_nvfuser_enabled(False)
+        aevj = AEVComputerJoint.like_ani1x().to(self.device, torch.double)
+        aevc = AEVComputerNL.like_ani1x().to(self.device, torch.double)
+        aevj.requires_grad_(False)
+        aevc.requires_grad_(False)
+        aevj = torch.jit.script(aevj)
+        aevc = torch.jit.script(aevc)
+
+        coordinates = np.loadtxt('./large_water.xyz', skiprows=2, usecols=[1, 2, 3])
+        species = np.loadtxt('./large_water.xyz', skiprows=2, usecols=[0], dtype=str).tolist()
+        species = np.asarray([torchani.utils.PERIODIC_TABLE.index(s) for s in species], dtype=int)
+        species = torch.from_numpy(species).to(dtype=torch.long, device=self.device).unsqueeze(0)
+        coordinates = torch.from_numpy(coordinates).to(dtype=torch.double, device = self.device).unsqueeze(0)
+        converter = torchani.nn.SpeciesConverter(['H', 'C', 'N', 'O'])
+        species, _ = converter((species, coordinates))
+        coordinates.requires_grad_(True)
+        with open('./large_water.xyz', 'r') as f:
+            cell_string = f.read().split('\n')[1].split('=')[-1].split()
+            cell_string = torch.tensor([float(s) for s in cell_string], device = self.device, dtype = torch.double)
+            cell = torch.diag(cell_string)
+        pbc = torch.tensor([True, True, True], dtype=torch.bool).to(self.device)
+        _, aev_c = aevc((species, coordinates), cell, pbc)
+        force_c = -torch.autograd.grad(aev_c.sum(), coordinates)[0]
+        coordinates.requires_grad_(True)
+        _, aev_j = aevc((species, coordinates), cell, pbc)
+        force_j = -torch.autograd.grad(aev_j.sum(), coordinates)[0]
+        self.assertTrue(torch.isclose(aev_c, aev_j).all())
+        self.assertTrue(torch.isclose(force_c, force_j).all())
 
 if __name__ == '__main__':
     unittest.main()
