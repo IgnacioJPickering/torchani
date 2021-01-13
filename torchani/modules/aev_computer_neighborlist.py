@@ -109,7 +109,7 @@ class CellListComputer(torch.nn.Module):
 
         # 1) Update the cell diagonal and translation displacements
         # sizes of each side are given by norm of each basis vector of the unit cell
-        self.cell_diagonal = torch.linalg.norm(cell, ord=2, dim=1)
+        self.cell_diagonal = torch.linalg.norm(cell, dim=0)
         self.cell_inverse = torch.inverse(cell)
 
         # I just need to index select this and add it to the coordinates to displace them
@@ -137,7 +137,7 @@ class CellListComputer(torch.nn.Module):
         # for row major this is (Gy * Gz, Gz, 1)
         self.scaling_for_flat_index = torch.ones(3, dtype=torch.long, device=current_device)
         self.scaling_for_flat_index[0] *= self.shape_buckets_grid[1] * self.shape_buckets_grid[2]
-        self.scaling_for_flat_index[1] *= self.shape_buckets_grid[1]
+        self.scaling_for_flat_index[1] *= self.shape_buckets_grid[2]
         #self.scaling_for_flat_index = torch.tensor(
         #             [self.shape_buckets_grid[1].item() * self.shape_buckets_grid[2].item(),
         #              self.shape_buckets_grid[1].item(), one.item()],
